@@ -1,3 +1,35 @@
+# SafeGuard — Women's Safety SOS App
+
+## Overview
+
+A full-featured women's safety mobile app built with Expo React Native. Features a classy dark UI with a prominent SOS button, multi-signal detection, verification phase, stealth emergency mode, and emergency contacts management.
+
+## App Features
+
+- **SOS Button** — Pulsing animated button; press to trigger verification phase
+- **Verification Phase** — 8-second countdown modal with "Send Now" or "Cancel" options
+- **Stealth Emergency Mode** — Full-screen SOS active view with real-time GPS, audio recording status, and contact notification tracking
+- **Background Monitoring** — Toggle smart detection (keyword spotting, motion anomaly detection)
+- **Scheduled Monitoring** — Set active hours for battery-efficient monitoring
+- **Emergency Contacts** — Add/edit/remove contacts with Primary designation
+- **Permissions Screen** — Clear explanations and grant flows for all required permissions
+- **User Profile** — Personal info and medical data sent with alerts
+
+## Screens
+
+- `app/(tabs)/index.tsx` — Guardian dashboard with SOS button
+- `app/(tabs)/contacts.tsx` — Emergency contacts management
+- `app/(tabs)/settings.tsx` — Monitoring settings and permissions
+- `app/(tabs)/profile.tsx` — User profile and medical info
+- `app/sos-active.tsx` — Full-screen active emergency view
+- `app/permissions.tsx` — Permission explanation and grant screen
+
+## Context
+
+- `context/SafeGuardContext.tsx` — Global state (contacts, monitoring, SOS state, profile)
+
+---
+
 # Workspace
 
 ## Overview

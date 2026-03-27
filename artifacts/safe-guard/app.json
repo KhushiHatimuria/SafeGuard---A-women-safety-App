@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "SafeGuard",
+    "slug": "safe-guard",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "safe-guard",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D0D0D"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SafeGuard needs location to send your GPS coordinates in emergency alerts.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeGuard uses background location to continuously update your position during an active emergency.",
+        "NSMicrophoneUsageDescription": "SafeGuard listens for distress keywords and records audio evidence during emergencies.",
+        "NSCameraUsageDescription": "SafeGuard records silent video evidence during active emergencies.",
+        "NSMotionUsageDescription": "SafeGuard uses motion sensors to detect falls and struggle patterns."
+      }
+    },
+    "android": {
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "RECORD_AUDIO",
+        "CAMERA",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "ACTIVITY_RECOGNITION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      "expo-location"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
