@@ -24,6 +24,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { COLORS } from "@/constants/colors";
 import { useSafeGuard } from "@/context/SafeGuardContext";
+import { api } from "@/lib/api";
 
 type LocationCoords = {
   latitude: number;
@@ -33,10 +34,9 @@ type LocationCoords = {
 
 export default function SOSActiveScreen() {
   const insets = useSafeAreaInsets();
-  const { contacts, userProfile, cancelSOS, setSosState } = useSafeGuard();
+  const { contacts, deactivateSOS, activeAlertId } = useSafeGuard();
   const [location, setLocation] = useState<LocationCoords | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [recordingAudio, setRecordingAudio] = useState(true);
   const [alertsSent, setAlertsSent] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
@@ -73,9 +73,7 @@ export default function SOSActiveScreen() {
 
     startLocationTracking();
 
-    setTimeout(() => {
-      setAlertsSent(true);
-    }, 2000);
+    setTimeout(() => setAlertsSent(true), 2000);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -84,40 +82,48 @@ export default function SOSActiveScreen() {
   }, []);
 
   const startLocationTracking = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status === "granted") {
-      const sub = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          timeInterval: 5000,
-          distanceInterval: 5,
-        },
-        (loc) => {
-          setLocation({
-            latitude: loc.coords.latitude,
-            longitude: loc.coords.longitude,
-            accuracy: loc.coords.accuracy,
-          });
-        }
-      );
-      locationWatchRef.current = sub;
-    }
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        const sub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            timeInterval: 5000,
+            distanceInterval: 5,
+          },
+          (loc) => {
+            const coords = {
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+              accuracy: loc.coords.accuracy,
+            };
+            setLocation(coords);
+            if (activeAlertId) {
+              api.alerts.pushLocation(activeAlertId, {
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                accuracy: coords.accuracy ?? undefined,
+              }).catch(() => {});
+            }
+          }
+        );
+        locationWatchRef.current = sub;
+      }
+    } catch {}
   };
 
   const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60)
-      .toString()
-      .padStart(2, "0");
+    const m = Math.floor(secs / 60).toString().padStart(2, "0");
     const s = (secs % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
   };
 
-  const handleDeactivate = () => {
+  const handleDeactivate = async () => {
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     }
-    cancelSOS();
-    setSosState("idle");
+    if (locationWatchRef.current) locationWatchRef.current.remove();
+    await deactivateSOS();
     router.back();
   };
 
@@ -129,7 +135,6 @@ export default function SOSActiveScreen() {
     opacity: dotOpacity.value,
   }));
 
-  const primaryContacts = contacts.filter((c) => c.isPrimary);
   const allContacts = contacts.slice(0, 5);
 
   return (
@@ -147,6 +152,9 @@ export default function SOSActiveScreen() {
           <Text style={styles.liveText}>EMERGENCY ACTIVE</Text>
         </View>
         <Text style={styles.timer}>{formatTime(elapsed)}</Text>
+        {activeAlertId && (
+          <Text style={styles.alertId}>ID: {activeAlertId.slice(0, 8).toUpperCase()}</Text>
+        )}
       </View>
 
       <ScrollView
@@ -164,7 +172,7 @@ export default function SOSActiveScreen() {
           <View style={styles.statusCard}>
             <Feather name="map-pin" size={18} color={COLORS.primary} />
             <View style={styles.statusCardContent}>
-              <Text style={styles.statusCardTitle}>Location</Text>
+              <Text style={styles.statusCardTitle}>Live Location</Text>
               <Text style={styles.statusCardValue}>
                 {location
                   ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
@@ -172,7 +180,7 @@ export default function SOSActiveScreen() {
               </Text>
               {location?.accuracy && (
                 <Text style={styles.statusCardSub}>
-                  ±{Math.round(location.accuracy)}m accuracy
+                  ±{Math.round(location.accuracy)}m accuracy · Streaming to contacts
                 </Text>
               )}
             </View>
@@ -185,32 +193,33 @@ export default function SOSActiveScreen() {
           </View>
 
           <View style={styles.statusCard}>
-            <Feather name="mic" size={18} color={COLORS.primary} />
+            <MaterialCommunityIcons name="database-check" size={18} color={COLORS.primary} />
             <View style={styles.statusCardContent}>
-              <Text style={styles.statusCardTitle}>Audio Recording</Text>
+              <Text style={styles.statusCardTitle}>Alert Logged</Text>
               <Text style={styles.statusCardValue}>
-                {recordingAudio ? "Recording in progress" : "Unavailable"}
+                {activeAlertId ? "Saved to secure database" : "Logging..."}
               </Text>
+              {activeAlertId && (
+                <Text style={styles.statusCardSub}>
+                  Reference: {activeAlertId.slice(0, 8).toUpperCase()}
+                </Text>
+              )}
             </View>
             <View
               style={[
                 styles.statusDot,
-                { backgroundColor: recordingAudio ? COLORS.success : COLORS.textMuted },
+                { backgroundColor: activeAlertId ? COLORS.success : COLORS.warning },
               ]}
             />
           </View>
 
           <View style={styles.statusCard}>
-            <MaterialCommunityIcons
-              name="send-check"
-              size={18}
-              color={COLORS.primary}
-            />
+            <MaterialCommunityIcons name="send-check" size={18} color={COLORS.primary} />
             <View style={styles.statusCardContent}>
               <Text style={styles.statusCardTitle}>Alerts Dispatched</Text>
               <Text style={styles.statusCardValue}>
                 {alertsSent
-                  ? `${allContacts.length > 0 ? allContacts.length : "0"} contact${allContacts.length !== 1 ? "s" : ""} notified`
+                  ? `${allContacts.length} contact${allContacts.length !== 1 ? "s" : ""} notified`
                   : "Sending alerts..."}
               </Text>
             </View>
@@ -267,7 +276,7 @@ export default function SOSActiveScreen() {
             <Text style={styles.deactivateBtnText}>Deactivate Emergency</Text>
           </Pressable>
           <Text style={styles.footerNote}>
-            Press firmly to confirm deactivation
+            Alert will be marked resolved in the database
           </Text>
         </View>
       </ScrollView>
@@ -276,10 +285,7 @@ export default function SOSActiveScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#050505",
-  },
+  container: { flex: 1, backgroundColor: "#050505" },
   header: {
     paddingHorizontal: 24,
     paddingBottom: 16,
@@ -287,35 +293,17 @@ const styles = StyleSheet.create({
     borderBottomColor: "#1A0000",
     alignItems: "center",
   },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.primary,
-  },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary },
   liveText: {
     fontSize: 11,
     fontFamily: "Inter_700Bold",
     color: COLORS.primary,
     letterSpacing: 2,
   },
-  timer: {
-    fontSize: 48,
-    fontFamily: "Inter_700Bold",
-    color: "#fff",
-    letterSpacing: 2,
-  },
-  content: {
-    padding: 24,
-    gap: 20,
-    paddingBottom: 40,
-  },
+  timer: { fontSize: 48, fontFamily: "Inter_700Bold", color: "#fff", letterSpacing: 2 },
+  alertId: { fontSize: 11, fontFamily: "Inter_500Medium", color: COLORS.textMuted, marginTop: 4 },
+  content: { padding: 24, gap: 20, paddingBottom: 40 },
   sosOrb: {
     alignSelf: "center",
     width: 120,
@@ -327,19 +315,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  sosOrbInner: {
-    alignItems: "center",
-    gap: 4,
-  },
-  sosOrbLabel: {
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
-    color: "#fff",
-    letterSpacing: 3,
-  },
-  statusCards: {
-    gap: 10,
-  },
+  sosOrbInner: { alignItems: "center", gap: 4 },
+  sosOrbLabel: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#fff", letterSpacing: 3 },
+  statusCards: { gap: 10 },
   statusCard: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -350,9 +328,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#1E1E1E",
   },
-  statusCardContent: {
-    flex: 1,
-  },
+  statusCardContent: { flex: 1 },
   statusCardTitle: {
     fontSize: 12,
     fontFamily: "Inter_500Medium",
@@ -361,26 +337,10 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
-  statusCardValue: {
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-    color: "#fff",
-  },
-  statusCardSub: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  section: {
-    gap: 8,
-  },
+  statusCardValue: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  statusCardSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: COLORS.textMuted, marginTop: 2 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginTop: 4 },
+  section: { gap: 8 },
   sectionLabel: {
     fontSize: 11,
     fontFamily: "Inter_600SemiBold",
@@ -406,24 +366,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  contactAvatarText: {
-    fontSize: 16,
-    fontFamily: "Inter_700Bold",
-    color: COLORS.primary,
-  },
-  contactInfo: {
-    flex: 1,
-  },
-  contactName: {
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-    color: "#fff",
-  },
-  contactPhone: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: COLORS.textMuted,
-  },
+  contactAvatarText: { fontSize: 16, fontFamily: "Inter_700Bold", color: COLORS.primary },
+  contactInfo: { flex: 1 },
+  contactName: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  contactPhone: { fontSize: 12, fontFamily: "Inter_400Regular", color: COLORS.textMuted },
   primaryBadge: {
     backgroundColor: COLORS.primary + "20",
     paddingHorizontal: 8,
@@ -432,11 +378,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.primary + "40",
   },
-  primaryBadgeText: {
-    fontSize: 10,
-    fontFamily: "Inter_600SemiBold",
-    color: COLORS.primary,
-  },
+  primaryBadgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: COLORS.primary },
   noContactsBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -454,11 +396,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSub,
     lineHeight: 18,
   },
-  footer: {
-    alignItems: "center",
-    gap: 10,
-    marginTop: 8,
-  },
+  footer: { alignItems: "center", gap: 10, marginTop: 8 },
   deactivateBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -472,14 +410,6 @@ const styles = StyleSheet.create({
     width: "100%",
     justifyContent: "center",
   },
-  deactivateBtnText: {
-    fontSize: 16,
-    fontFamily: "Inter_600SemiBold",
-    color: "#fff",
-  },
-  footerNote: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: COLORS.textMuted,
-  },
+  deactivateBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  footerNote: { fontSize: 12, fontFamily: "Inter_400Regular", color: COLORS.textMuted },
 });

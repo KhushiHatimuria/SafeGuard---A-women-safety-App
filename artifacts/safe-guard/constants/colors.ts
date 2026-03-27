@@ -31,6 +31,7 @@ export const COLORS = {
   primaryLight: accentLight,
   bg: "#0D0D0D",
   bgCard: "#1A1A1A",
+  cardBg: "#1A1A1A",
   bgCard2: "#242424",
   text: "#F5F3EF",
   textSub: "#A09D98",

@@ -1,22 +1,28 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: SafeGuard Women's Safety API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: profile
+    description: User profile operations
+  - name: contacts
+    description: Emergency contacts operations
+  - name: alerts
+    description: SOS alert operations
+  - name: classify
+    description: AI distress classification
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +30,237 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get user profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: upsertProfile
+      tags: [profile]
+      summary: Create or update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertProfileBody"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /contacts:
+    get:
+      operationId: getContacts
+      tags: [contacts]
+      summary: Get all emergency contacts
+      responses:
+        "200":
+          description: List of contacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Contact"
+    post:
+      operationId: createContact
+      tags: [contacts]
+      summary: Create emergency contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContactBody"
+      responses:
+        "201":
+          description: Created contact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+
+  /contacts/{id}:
+    put:
+      operationId: updateContact
+      tags: [contacts]
+      summary: Update emergency contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContactBody"
+      responses:
+        "200":
+          description: Updated contact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+    delete:
+      operationId: deleteContact
+      tags: [contacts]
+      summary: Delete emergency contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /alerts:
+    get:
+      operationId: getAlerts
+      tags: [alerts]
+      summary: Get all SOS alerts history
+      responses:
+        "200":
+          description: List of alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Alert"
+    post:
+      operationId: createAlert
+      tags: [alerts]
+      summary: Create a new SOS alert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAlertBody"
+      responses:
+        "201":
+          description: Created alert
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+
+  /alerts/{id}:
+    patch:
+      operationId: updateAlert
+      tags: [alerts]
+      summary: Update alert status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAlertBody"
+      responses:
+        "200":
+          description: Updated alert
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alert"
+
+  /alerts/{id}/location:
+    post:
+      operationId: updateAlertLocation
+      tags: [alerts]
+      summary: Push a location update for an active alert
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocationUpdateBody"
+      responses:
+        "200":
+          description: Location recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /classify/audio:
+    post:
+      operationId: classifyAudio
+      tags: [classify]
+      summary: Classify audio for distress signals using Gemini AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClassifyAudioBody"
+      responses:
+        "200":
+          description: Classification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassifyAudioResponse"
+
+  /classify/text:
+    post:
+      operationId: classifyText
+      tags: [classify]
+      summary: Classify text for distress keywords
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClassifyTextBody"
+      responses:
+        "200":
+          description: Classification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassifyTextResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +268,201 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required: [success]
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+        bloodGroup:
+          type: string
+        medicalNotes:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, name, phone, bloodGroup, medicalNotes, createdAt, updatedAt]
+
+    UpsertProfileBody:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        bloodGroup:
+          type: string
+        medicalNotes:
+          type: string
+      required: [name, phone]
+
+    Contact:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+        relationship:
+          type: string
+        isPrimary:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, name, phone, relationship, isPrimary, createdAt]
+
+    CreateContactBody:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        relationship:
+          type: string
+        isPrimary:
+          type: boolean
+      required: [name, phone, relationship, isPrimary]
+
+    Alert:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [active, resolved, cancelled]
+        triggerType:
+          type: string
+          enum: [manual, auto, keyword, motion]
+        latitude:
+          type: number
+        longitude:
+          type: number
+        accuracy:
+          type: number
+        contactsNotified:
+          type: number
+        audioRecorded:
+          type: boolean
+        notes:
+          type: string
+        createdAt:
+          type: string
+        resolvedAt:
+          type: string
+      required: [id, status, triggerType, contactsNotified, audioRecorded, createdAt]
+
+    CreateAlertBody:
+      type: object
+      properties:
+        triggerType:
+          type: string
+          enum: [manual, auto, keyword, motion]
+        latitude:
+          type: number
+        longitude:
+          type: number
+        accuracy:
+          type: number
+        contactsNotified:
+          type: number
+        audioRecorded:
+          type: boolean
+        notes:
+          type: string
+      required: [triggerType, contactsNotified, audioRecorded]
+
+    UpdateAlertBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, resolved, cancelled]
+        resolvedAt:
+          type: string
+        notes:
+          type: string
+
+    LocationUpdateBody:
+      type: object
+      properties:
+        latitude:
+          type: number
+        longitude:
+          type: number
+        accuracy:
+          type: number
+        timestamp:
+          type: string
+      required: [latitude, longitude]
+
+    ClassifyAudioBody:
+      type: object
+      properties:
+        audioBase64:
+          type: string
+        mimeType:
+          type: string
+        durationSeconds:
+          type: number
+      required: [audioBase64, mimeType]
+
+    ClassifyAudioResponse:
+      type: object
+      properties:
+        isDistress:
+          type: boolean
+        confidence:
+          type: number
+        detectedKeywords:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+        triggerSOS:
+          type: boolean
+      required: [isDistress, confidence, detectedKeywords, reasoning, triggerSOS]
+
+    ClassifyTextBody:
+      type: object
+      properties:
+        text:
+          type: string
+      required: [text]
+
+    ClassifyTextResponse:
+      type: object
+      properties:
+        isDistress:
+          type: boolean
+        confidence:
+          type: number
+        detectedKeywords:
+          type: array
+          items:
+            type: string
+      required: [isDistress, confidence, detectedKeywords]
