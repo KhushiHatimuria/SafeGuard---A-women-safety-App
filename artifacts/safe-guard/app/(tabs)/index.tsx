@@ -2,7 +2,7 @@ import { MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect } from "react";
 import {
   Platform,
   Pressable,
@@ -38,9 +38,15 @@ export default function HomeScreen() {
     alertCount,
     monitoring,
     userProfile,
+    motionAlert,
+    dismissMotionAlert,
+    voiceListening,
+    lastDetection,
   } = useSafeGuard();
 
   const monitoringDotOpacity = useSharedValue(1);
+  const voiceDotOpacity = useSharedValue(1);
+  const motionBannerOpacity = useSharedValue(0);
 
   useEffect(() => {
     if (isMonitoringActive) {
@@ -57,9 +63,24 @@ export default function HomeScreen() {
     }
   }, [isMonitoringActive]);
 
-  const dotStyle = useAnimatedStyle(() => ({
-    opacity: monitoringDotOpacity.value,
-  }));
+  useEffect(() => {
+    if (voiceListening) {
+      voiceDotOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0.1, { duration: 400 }),
+          withTiming(1, { duration: 400 })
+        ),
+        -1,
+        true
+      );
+    } else {
+      voiceDotOpacity.value = 1;
+    }
+  }, [voiceListening]);
+
+  useEffect(() => {
+    motionBannerOpacity.value = withTiming(motionAlert ? 1 : 0, { duration: 300 });
+  }, [motionAlert]);
 
   useEffect(() => {
     if (sosState === "active") {
@@ -68,30 +89,29 @@ export default function HomeScreen() {
   }, [sosState]);
 
   const handleSOSPress = () => {
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    }
-    triggerSOS();
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    triggerSOS("manual");
   };
 
   const handleMonitoringToggle = () => {
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     toggleMonitoring();
   };
 
+  const dotStyle = useAnimatedStyle(() => ({ opacity: monitoringDotOpacity.value }));
+  const voiceDotStyle = useAnimatedStyle(() => ({ opacity: voiceDotOpacity.value }));
+  const motionBannerStyle = useAnimatedStyle(() => ({
+    opacity: motionBannerOpacity.value,
+    transform: [{ translateY: motionAlert ? 0 : -10 }],
+  }));
+
   const primaryContacts = contacts.filter((c) => c.isPrimary);
   const readyContacts = contacts.length;
-
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 16);
   const bottomPad = Platform.OS === "web" ? 34 : 0;
 
   return (
-    <LinearGradient
-      colors={["#0D0D0D", "#0A0505", "#0D0D0D"]}
-      style={styles.container}
-    >
+    <LinearGradient colors={["#0D0D0D", "#0A0505", "#0D0D0D"]} style={styles.container}>
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
@@ -99,6 +119,7 @@ export default function HomeScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Header */}
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>
@@ -106,41 +127,81 @@ export default function HomeScreen() {
             </Text>
             <Text style={styles.tagline}>Your personal guardian</Text>
           </View>
-          <Pressable
-            onPress={() => router.push("/permissions")}
-            style={styles.shieldIcon}
-          >
-            <MaterialCommunityIcons
-              name="shield-check"
-              size={24}
-              color={COLORS.primary}
-            />
-          </Pressable>
+          <View style={styles.headerRight}>
+            {voiceListening && (
+              <Animated.View style={[styles.voiceBadge, voiceDotStyle]}>
+                <MaterialCommunityIcons name="microphone" size={14} color={COLORS.primary} />
+              </Animated.View>
+            )}
+            <Pressable onPress={() => router.push("/permissions")} style={styles.shieldIcon}>
+              <MaterialCommunityIcons name="shield-check" size={24} color={COLORS.primary} />
+            </Pressable>
+          </View>
         </View>
 
+        {/* Motion alert banner */}
+        {motionAlert && (
+          <Animated.View style={[styles.motionBanner, motionBannerStyle]}>
+            <MaterialCommunityIcons name="run-fast" size={20} color={COLORS.warning} />
+            <View style={styles.motionBannerContent}>
+              <Text style={styles.motionBannerTitle}>Motion Detected</Text>
+              <Text style={styles.motionBannerSub}>Unusual movement pattern detected</Text>
+            </View>
+            <Pressable
+              style={styles.motionSOS}
+              onPress={() => {
+                dismissMotionAlert();
+                triggerSOS("motion");
+              }}
+            >
+              <Text style={styles.motionSOSText}>SOS</Text>
+            </Pressable>
+            <Pressable onPress={dismissMotionAlert} style={styles.motionDismiss}>
+              <Feather name="x" size={16} color={COLORS.textMuted} />
+            </Pressable>
+          </Animated.View>
+        )}
+
+        {/* Last detection info */}
+        {lastDetection && !motionAlert && (
+          <View style={styles.detectionBanner}>
+            <MaterialCommunityIcons
+              name={lastDetection.type === "codeword" ? "key-variant" : "microphone-outline"}
+              size={16}
+              color={COLORS.primary}
+            />
+            <Text style={styles.detectionText}>
+              {lastDetection.type === "codeword"
+                ? `Codeword detected (${Math.round(lastDetection.confidence * 100)}%)`
+                : `Voice signal: ${lastDetection.keywords.slice(0, 2).join(", ")}`}
+            </Text>
+          </View>
+        )}
+
+        {/* SOS Button */}
         <View style={styles.sosSection}>
           <SOSButton
             onPress={handleSOSPress}
             isActive={sosState === "active"}
             size={200}
           />
-          <Text style={styles.sosHint}>
-            Press once to trigger emergency SOS
-          </Text>
+          <Text style={styles.sosHint}>Press once to trigger emergency SOS</Text>
+          {monitoring.codeword ? (
+            <View style={styles.codewordActiveRow}>
+              <MaterialCommunityIcons name="key-variant" size={13} color={COLORS.primary} />
+              <Text style={styles.codewordHint}>Codeword "{monitoring.codeword}" active</Text>
+            </View>
+          ) : null}
         </View>
 
+        {/* Monitoring toggle card */}
         <View style={styles.monitoringCard}>
           <View style={styles.monitoringLeft}>
             <View style={styles.monitoringIconWrap}>
               {isMonitoringActive ? (
                 <Animated.View style={[styles.monitoringDot, dotStyle]} />
               ) : (
-                <View
-                  style={[
-                    styles.monitoringDot,
-                    { backgroundColor: COLORS.textMuted },
-                  ]}
-                />
+                <View style={[styles.monitoringDot, { backgroundColor: COLORS.textMuted }]} />
               )}
               <MaterialCommunityIcons
                 name="radar"
@@ -154,27 +215,22 @@ export default function HomeScreen() {
               </Text>
               <Text style={styles.monitoringSubtitle}>
                 {isMonitoringActive
-                  ? "Listening for distress signals"
+                  ? voiceListening
+                    ? "Recording & analysing audio..."
+                    : "Listening for distress signals"
                   : "Tap to enable smart detection"}
               </Text>
             </View>
           </View>
           <Pressable
-            style={[
-              styles.monitoringToggle,
-              isMonitoringActive && styles.monitoringToggleActive,
-            ]}
+            style={[styles.monitoringToggle, isMonitoringActive && styles.monitoringToggleActive]}
             onPress={handleMonitoringToggle}
           >
-            <View
-              style={[
-                styles.toggleKnob,
-                isMonitoringActive && styles.toggleKnobActive,
-              ]}
-            />
+            <View style={[styles.toggleKnob, isMonitoringActive && styles.toggleKnobActive]} />
           </Pressable>
         </View>
 
+        {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{readyContacts}</Text>
@@ -196,44 +252,30 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Quick Actions */}
         <View style={styles.quickActions}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionGrid}>
-            <Pressable
-              style={styles.actionCard}
-              onPress={() => router.push("/permissions")}
-            >
-              <MaterialCommunityIcons
-                name="shield-lock"
-                size={24}
-                color={COLORS.primary}
-              />
+            <Pressable style={styles.actionCard} onPress={() => router.push("/permissions")}>
+              <MaterialCommunityIcons name="shield-lock" size={24} color={COLORS.primary} />
               <Text style={styles.actionLabel}>Permissions</Text>
             </Pressable>
-            <Pressable
-              style={styles.actionCard}
-              onPress={() => router.push("/(tabs)/contacts")}
-            >
+            <Pressable style={styles.actionCard} onPress={() => router.push("/(tabs)/contacts")}>
               <Feather name="user-plus" size={24} color={COLORS.primary} />
               <Text style={styles.actionLabel}>Add Contact</Text>
             </Pressable>
-            <Pressable
-              style={styles.actionCard}
-              onPress={() => router.push("/(tabs)/settings")}
-            >
+            <Pressable style={styles.actionCard} onPress={() => router.push("/(tabs)/history")}>
               <Feather name="clock" size={24} color={COLORS.primary} />
-              <Text style={styles.actionLabel}>Schedule</Text>
+              <Text style={styles.actionLabel}>History</Text>
             </Pressable>
-            <Pressable
-              style={styles.actionCard}
-              onPress={() => router.push("/(tabs)/profile")}
-            >
+            <Pressable style={styles.actionCard} onPress={() => router.push("/(tabs)/profile")}>
               <Feather name="user" size={24} color={COLORS.primary} />
               <Text style={styles.actionLabel}>Profile</Text>
             </Pressable>
           </View>
         </View>
 
+        {/* Setup banner if no contacts */}
         {contacts.length === 0 && (
           <Pressable
             style={styles.setupBanner}
@@ -242,6 +284,20 @@ export default function HomeScreen() {
             <Feather name="alert-triangle" size={18} color={COLORS.warning} />
             <Text style={styles.setupBannerText}>
               Add emergency contacts to receive your SOS alerts
+            </Text>
+            <Feather name="chevron-right" size={16} color={COLORS.textMuted} />
+          </Pressable>
+        )}
+
+        {/* Codeword setup banner */}
+        {isMonitoringActive && !monitoring.codeword && (
+          <Pressable
+            style={styles.codewordSetupBanner}
+            onPress={() => router.push("/(tabs)/settings")}
+          >
+            <MaterialCommunityIcons name="microphone-question" size={18} color={COLORS.primary} />
+            <Text style={styles.codewordSetupText}>
+              Set a secret codeword for silent SOS activation
             </Text>
             <Feather name="chevron-right" size={16} color={COLORS.textMuted} />
           </Pressable>
@@ -259,28 +315,26 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scroll: {
-    paddingHorizontal: 20,
-  },
+  container: { flex: 1 },
+  scroll: { paddingHorizontal: 20 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: 20,
   },
-  greeting: {
-    fontSize: 26,
-    fontFamily: "Inter_700Bold",
-    color: COLORS.text,
-  },
-  tagline: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: COLORS.textSub,
-    marginTop: 2,
+  greeting: { fontSize: 26, fontFamily: "Inter_700Bold", color: COLORS.text },
+  tagline: { fontSize: 13, fontFamily: "Inter_400Regular", color: COLORS.textSub, marginTop: 2 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  voiceBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.primary + "20",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "40",
   },
   shieldIcon: {
     width: 44,
@@ -290,15 +344,86 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  motionBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.warning + "15",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.warning + "40",
+    marginBottom: 16,
+    gap: 10,
+  },
+  motionBannerContent: { flex: 1 },
+  motionBannerTitle: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: COLORS.warning,
+  },
+  motionBannerSub: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.textSub,
+  },
+  motionSOS: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  motionSOSText: {
+    fontSize: 12,
+    fontFamily: "Inter_700Bold",
+    color: "#fff",
+    letterSpacing: 1,
+  },
+  motionDismiss: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.bgCard2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detectionBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: COLORS.primary + "10",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "20",
+    marginBottom: 12,
+  },
+  detectionText: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    color: COLORS.textSub,
+    flex: 1,
+  },
   sosSection: {
     alignItems: "center",
-    marginBottom: 36,
-    gap: 14,
+    marginBottom: 32,
+    gap: 12,
   },
   sosHint: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     color: COLORS.textMuted,
+    letterSpacing: 0.3,
+  },
+  codewordActiveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  codewordHint: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    color: COLORS.primary,
     letterSpacing: 0.3,
   },
   monitoringCard: {
@@ -312,12 +437,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  monitoringLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
+  monitoringLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
   monitoringIconWrap: {
     width: 44,
     height: 44,
@@ -336,11 +456,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.success,
     zIndex: 1,
   },
-  monitoringTitle: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-    color: COLORS.text,
-  },
+  monitoringTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: COLORS.text },
   monitoringSubtitle: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",
@@ -355,9 +471,7 @@ const styles = StyleSheet.create({
     padding: 3,
     justifyContent: "center",
   },
-  monitoringToggleActive: {
-    backgroundColor: COLORS.success,
-  },
+  monitoringToggleActive: { backgroundColor: COLORS.success },
   toggleKnob: {
     width: 24,
     height: 24,
@@ -369,14 +483,8 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  toggleKnobActive: {
-    alignSelf: "flex-end",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 24,
-  },
+  toggleKnobActive: { alignSelf: "flex-end" },
+  statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
   statCard: {
     flex: 1,
     backgroundColor: COLORS.bgCard,
@@ -387,23 +495,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  statCardMiddle: {
-    borderColor: COLORS.primary + "30",
-  },
-  statValue: {
-    fontSize: 28,
-    fontFamily: "Inter_700Bold",
-    color: COLORS.primary,
-  },
+  statCardMiddle: { borderColor: COLORS.primary + "30" },
+  statValue: { fontSize: 28, fontFamily: "Inter_700Bold", color: COLORS.primary },
   statLabel: {
     fontSize: 11,
     fontFamily: "Inter_500Medium",
     color: COLORS.textSub,
     textAlign: "center",
   },
-  quickActions: {
-    marginBottom: 16,
-  },
+  quickActions: { marginBottom: 16 },
   sectionTitle: {
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
@@ -412,11 +512,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: 12,
   },
-  actionGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
+  actionGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   actionCard: {
     width: "47%",
     backgroundColor: COLORS.bgCard,
@@ -427,11 +523,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  actionLabel: {
-    fontSize: 13,
-    fontFamily: "Inter_500Medium",
-    color: COLORS.textSub,
-  },
+  actionLabel: { fontSize: 13, fontFamily: "Inter_500Medium", color: COLORS.textSub },
   setupBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -441,8 +533,26 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: COLORS.warning + "25",
+    marginBottom: 12,
   },
   setupBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.textSub,
+    lineHeight: 18,
+  },
+  codewordSetupBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: COLORS.primary + "08",
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "20",
+  },
+  codewordSetupText: {
     flex: 1,
     fontSize: 13,
     fontFamily: "Inter_400Regular",

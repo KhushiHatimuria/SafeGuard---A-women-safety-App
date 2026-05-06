@@ -2,16 +2,10 @@ const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
   ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api-server/api`
   : "http://localhost:8080/api";
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers: { "Content-Type": "application/json", ...options.headers },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
@@ -53,6 +47,23 @@ export type ApiAlert = {
   resolvedAt?: string;
 };
 
+export type ClassifyAudioResult = {
+  isDistress: boolean;
+  confidence: number;
+  detectedKeywords: string[];
+  reasoning: string;
+  codewordDetected: boolean;
+  triggerSOS: boolean;
+};
+
+export type ClassifyTextResult = {
+  isDistress: boolean;
+  confidence: number;
+  detectedKeywords: string[];
+  codewordDetected: boolean;
+  triggerSOS: boolean;
+};
+
 export const api = {
   profile: {
     get: () => request<ApiProfile>("/profile"),
@@ -84,23 +95,24 @@ export const api = {
     update: (id: string, data: { status?: "active" | "resolved" | "cancelled"; notes?: string }) =>
       request<ApiAlert>(`/alerts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     pushLocation: (id: string, data: { latitude: number; longitude: number; accuracy?: number }) =>
-      request<{ success: boolean }>(`/alerts/${id}/location`, { method: "POST", body: JSON.stringify(data) }),
+      request<{ success: boolean }>(`/alerts/${id}/location`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
   },
 
   classify: {
-    audio: (data: { audioBase64: string; mimeType: string; durationSeconds?: number }) =>
-      request<{
-        isDistress: boolean;
-        confidence: number;
-        detectedKeywords: string[];
-        reasoning: string;
-        triggerSOS: boolean;
-      }>("/classify/audio", { method: "POST", body: JSON.stringify(data) }),
-    text: (text: string) =>
-      request<{
-        isDistress: boolean;
-        confidence: number;
-        detectedKeywords: string[];
-      }>("/classify/text", { method: "POST", body: JSON.stringify({ text }) }),
+    audio: (data: {
+      audioBase64: string;
+      mimeType: string;
+      durationSeconds?: number;
+      codeword?: string;
+    }) => request<ClassifyAudioResult>("/classify/audio", { method: "POST", body: JSON.stringify(data) }),
+
+    text: (text: string, codeword?: string) =>
+      request<ClassifyTextResult>("/classify/text", {
+        method: "POST",
+        body: JSON.stringify({ text, codeword }),
+      }),
   },
 };

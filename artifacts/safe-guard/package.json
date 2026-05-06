@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "expo-av": "~15.1.7",
+    "expo-file-system": "^55.0.17",
     "expo-sensors": "~14.1.4"
   }
 }
