@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Platform,
   Pressable,
   ScrollView,
@@ -15,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { COLORS } from "@/constants/colors";
 import { useSafeGuard } from "@/context/SafeGuardContext";
+import { api } from "@/lib/api";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -118,13 +120,23 @@ function PermRow({
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { monitoring, updateMonitoring, isMonitoringActive, toggleMonitoring, voiceListening } =
+  const { monitoring, updateMonitoring, isMonitoringActive, toggleMonitoring, voiceListening, confirmSOS } =
     useSafeGuard();
 
   const [locationGranted, setLocationGranted] = useState(false);
   const [micGranted, setMicGranted] = useState(false);
   const [codewordInput, setCodewordInput] = useState(monitoring.codeword);
   const codewordSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Codeword test state
+  const [testInput, setTestInput] = useState("");
+  const [testResult, setTestResult] = useState<{
+    triggered: boolean;
+    codewordDetected: boolean;
+    confidence: number;
+    keywords: string[];
+  } | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
 
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 16);
   const bottomPad = Platform.OS === "web" ? 34 : 0;
@@ -170,6 +182,28 @@ export default function SettingsScreen() {
     codewordSaveRef.current = setTimeout(() => {
       updateMonitoring({ codeword: text.trim().toLowerCase() });
     }, 600);
+  };
+
+  const handleTestCodeword = async () => {
+    if (!testInput.trim()) return;
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const result = await api.classify.text(testInput.trim(), monitoring.codeword || undefined);
+      setTestResult({
+        triggered: result.triggerSOS,
+        codewordDetected: result.codewordDetected,
+        confidence: result.confidence,
+        keywords: result.detectedKeywords,
+      });
+      if (result.triggerSOS) {
+        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      }
+    } catch {
+      setTestResult(null);
+    } finally {
+      setTestLoading(false);
+    }
   };
 
   const sensitivities = ["low", "medium", "high"] as const;
@@ -290,6 +324,74 @@ export default function SettingsScreen() {
           <Text style={styles.codewordHint}>
             Choose an innocent word unlikely to come up by accident. Works across languages.
           </Text>
+        </View>
+
+        {/* Codeword test — works on web AND native */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>TEST CODEWORD DETECTION</Text>
+          <Text style={styles.cardSubtitle}>
+            Type a phrase as if you were speaking it aloud. The AI will check if your codeword or distress signals are detected.
+          </Text>
+
+          <View style={styles.testRow}>
+            <TextInput
+              style={styles.testInput}
+              value={testInput}
+              onChangeText={(t) => { setTestInput(t); setTestResult(null); }}
+              placeholder={monitoring.codeword ? `e.g. "can you order some ${monitoring.codeword}?"` : 'e.g. "help me please" or your codeword'}
+              placeholderTextColor={COLORS.textMuted}
+              onSubmitEditing={handleTestCodeword}
+              returnKeyType="send"
+            />
+            <Pressable
+              style={[styles.testBtn, (!testInput.trim() || testLoading) && styles.testBtnDisabled]}
+              onPress={handleTestCodeword}
+              disabled={!testInput.trim() || testLoading}
+            >
+              {testLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Feather name="zap" size={16} color="#fff" />
+              )}
+            </Pressable>
+          </View>
+
+          {testResult !== null && (
+            <View
+              style={[
+                styles.testResultBox,
+                testResult.triggered ? styles.testResultTriggered : styles.testResultSafe,
+              ]}
+            >
+              <View style={styles.testResultHeader}>
+                <Feather
+                  name={testResult.triggered ? "alert-triangle" : "check-circle"}
+                  size={18}
+                  color={testResult.triggered ? COLORS.primary : COLORS.success}
+                />
+                <Text
+                  style={[
+                    styles.testResultTitle,
+                    { color: testResult.triggered ? COLORS.primary : COLORS.success },
+                  ]}
+                >
+                  {testResult.codewordDetected
+                    ? "Codeword Detected — SOS Would Trigger"
+                    : testResult.triggered
+                    ? "Distress Detected — SOS Would Trigger"
+                    : "No Threat Detected — Safe"}
+                </Text>
+              </View>
+              {testResult.keywords.length > 0 && (
+                <Text style={styles.testResultDetail}>
+                  Detected: {testResult.keywords.join(", ")}
+                </Text>
+              )}
+              <Text style={styles.testResultConfidence}>
+                Confidence: {Math.round(testResult.confidence * 100)}%
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Detection signals */}
@@ -613,5 +715,69 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+  },
+  testRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+  testInput: {
+    flex: 1,
+    backgroundColor: COLORS.bgCard2,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.text,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  testBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  testBtnDisabled: { opacity: 0.4 },
+  testResultBox: {
+    borderRadius: 14,
+    padding: 14,
+    gap: 6,
+    borderWidth: 1,
+  },
+  testResultTriggered: {
+    backgroundColor: COLORS.primary + "12",
+    borderColor: COLORS.primary + "40",
+  },
+  testResultSafe: {
+    backgroundColor: COLORS.success + "12",
+    borderColor: COLORS.success + "40",
+  },
+  testResultHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  testResultTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    lineHeight: 18,
+  },
+  testResultDetail: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.textSub,
+    marginLeft: 26,
+  },
+  testResultConfidence: {
+    fontSize: 11,
+    fontFamily: "Inter_500Medium",
+    color: COLORS.textMuted,
+    marginLeft: 26,
   },
 });

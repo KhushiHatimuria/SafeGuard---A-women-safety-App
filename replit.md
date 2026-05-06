@@ -40,7 +40,7 @@ lib/integrations-gemini-ai/      # Gemini AI integration template
 
 - **Voice monitoring loop**: Records 5s audio clips every 8s when monitoring is ON; sends base64 to `/classify/audio` (Gemini 2.5 Flash). Codeword + distress keyword detection runs in the same request.
 - **Codeword stored in AsyncStorage** via `MonitoringSchedule.codeword`; passed to backend with every classify request.
-- **CORS**: Manual `Access-Control-Allow-Origin` middleware in Express handles CORS. In Replit web preview, the Expo dev server is on a different subdomain (`*.expo.picard.replit.dev`) from the API proxy (`*.picard.replit.dev`), so API calls fail in browser but work perfectly on native (iOS/Android) where CORS doesn't apply.
+- **Dev proxy** (`artifacts/safe-guard/server/proxy.mjs`): Runs on `$PORT`, routes `/api-server/api/*` → `localhost:8080` and everything else → Expo bundler on `$PORT+1`. This makes API calls same-origin on web, eliminating CORS issues in the browser preview.
 - **Motion detection**: Accelerometer data in 300ms intervals, rolling 10-sample window, threshold varies by sensitivity setting (low=3.5, medium=2.8, high=2.0 m/s²).
 - **Alert lifecycle**: `sos_alerts` row is created on confirmSOS, updated to "resolved" on deactivateSOS. Status shown in history tab.
 
@@ -48,7 +48,7 @@ lib/integrations-gemini-ai/      # Gemini AI integration template
 
 - **Guardian tab**: SOS button, monitoring toggle, motion alert banner, codeword status, stats
 - **Contacts tab**: Add/edit/remove emergency contacts with primary designation; async save with loading states
-- **Monitor tab**: Wired toggles for keyword spotting, motion detection, vibrate, auto-escalate; codeword text input; sensitivity selector; permission grants
+- **Monitor tab**: Wired toggles for keyword spotting, motion detection, vibrate, auto-escalate; codeword text input; sensitivity selector; permission grants; **"Test Codeword Detection"** card lets user type a phrase to verify codeword/distress detection via API (works on web and native)
 - **History tab**: List of all SOS alerts from DB with timestamps and trigger type
 - **Profile tab**: Personal info + medical notes stored in DB
 - **SOS Active screen**: GPS tracking, live status, deactivate option

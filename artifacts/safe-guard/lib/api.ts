@@ -1,6 +1,19 @@
-const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api-server/api`
-  : "http://localhost:8080/api";
+import { Platform } from "react-native";
+
+function getBaseUrl() {
+  // On web (browser), use a same-origin relative URL so the dev proxy can
+  // forward it to the API server without CORS preflight being blocked.
+  if (Platform.OS === "web") {
+    return "/api-server/api";
+  }
+  // On native (iOS / Android), use the full URL via the Replit dev domain.
+  if (process.env.EXPO_PUBLIC_DOMAIN) {
+    return `https://${process.env.EXPO_PUBLIC_DOMAIN}/api-server/api`;
+  }
+  return "http://localhost:8080/api";
+}
+
+const BASE_URL = getBaseUrl();
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {

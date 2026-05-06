@@ -38,6 +38,7 @@ export default function SOSActiveScreen() {
   const [location, setLocation] = useState<LocationCoords | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [alertsSent, setAlertsSent] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
 
@@ -45,7 +46,8 @@ export default function SOSActiveScreen() {
   const dotOpacity = useSharedValue(1);
 
   useEffect(() => {
-    StatusBar.setBarStyle("light-content");
+    if (Platform.OS !== "web") StatusBar.setBarStyle("light-content");
+
     pulseScale.value = withRepeat(
       withSequence(
         withTiming(1.15, { duration: 800, easing: Easing.inOut(Easing.ease) }),
@@ -72,7 +74,6 @@ export default function SOSActiveScreen() {
     }, 1000);
 
     startLocationTracking();
-
     setTimeout(() => setAlertsSent(true), 2000);
 
     return () => {
@@ -86,11 +87,7 @@ export default function SOSActiveScreen() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") {
         const sub = await Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.High,
-            timeInterval: 5000,
-            distanceInterval: 5,
-          },
+          { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 5 },
           (loc) => {
             const coords = {
               latitude: loc.coords.latitude,
@@ -99,11 +96,13 @@ export default function SOSActiveScreen() {
             };
             setLocation(coords);
             if (activeAlertId) {
-              api.alerts.pushLocation(activeAlertId, {
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                accuracy: coords.accuracy ?? undefined,
-              }).catch(() => {});
+              api.alerts
+                .pushLocation(activeAlertId, {
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                  accuracy: coords.accuracy ?? undefined,
+                })
+                .catch(() => {});
             }
           }
         );
@@ -119,34 +118,28 @@ export default function SOSActiveScreen() {
   };
 
   const handleDeactivate = async () => {
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    }
+    setDeactivating(true);
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     if (locationWatchRef.current) locationWatchRef.current.remove();
     await deactivateSOS();
-    router.back();
+    router.replace("/(tabs)");
   };
 
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],
   }));
-
-  const dotStyle = useAnimatedStyle(() => ({
-    opacity: dotOpacity.value,
-  }));
+  const dotStyle = useAnimatedStyle(() => ({ opacity: dotOpacity.value }));
 
   const allContacts = contacts.slice(0, 5);
+  const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
+  const bottomPad = insets.bottom + 16;
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      {Platform.OS !== "web" && <StatusBar barStyle="light-content" backgroundColor="#000" />}
 
-      <View
-        style={[
-          styles.header,
-          { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 0) },
-        ]}
-      >
+      {/* Fixed header */}
+      <View style={[styles.header, { paddingTop: topPad }]}>
         <View style={styles.statusRow}>
           <Animated.View style={[styles.liveDot, dotStyle]} />
           <Text style={styles.liveText}>EMERGENCY ACTIVE</Text>
@@ -157,6 +150,7 @@ export default function SOSActiveScreen() {
         )}
       </View>
 
+      {/* Scrollable content */}
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -178,9 +172,9 @@ export default function SOSActiveScreen() {
                   ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
                   : "Acquiring GPS..."}
               </Text>
-              {location?.accuracy && (
+              {location?.accuracy != null && (
                 <Text style={styles.statusCardSub}>
-                  ±{Math.round(location.accuracy)}m accuracy · Streaming to contacts
+                  ±{Math.round(location.accuracy)}m · Streaming to contacts
                 </Text>
               )}
             </View>
@@ -201,7 +195,7 @@ export default function SOSActiveScreen() {
               </Text>
               {activeAlertId && (
                 <Text style={styles.statusCardSub}>
-                  Reference: {activeAlertId.slice(0, 8).toUpperCase()}
+                  Ref: {activeAlertId.slice(0, 8).toUpperCase()}
                 </Text>
               )}
             </View>
@@ -238,9 +232,7 @@ export default function SOSActiveScreen() {
             {allContacts.map((c) => (
               <View key={c.id} style={styles.contactRow}>
                 <View style={styles.contactAvatar}>
-                  <Text style={styles.contactAvatarText}>
-                    {c.name.charAt(0).toUpperCase()}
-                  </Text>
+                  <Text style={styles.contactAvatarText}>{c.name.charAt(0).toUpperCase()}</Text>
                 </View>
                 <View style={styles.contactInfo}>
                   <Text style={styles.contactName}>{c.name}</Text>
@@ -265,21 +257,26 @@ export default function SOSActiveScreen() {
           <View style={styles.noContactsBox}>
             <Feather name="alert-triangle" size={20} color={COLORS.warning} />
             <Text style={styles.noContactsText}>
-              No emergency contacts set. Add contacts in the Contacts tab.
+              No emergency contacts set. Add contacts in the Contacts tab after deactivating.
             </Text>
           </View>
         )}
-
-        <View style={styles.footer}>
-          <Pressable style={styles.deactivateBtn} onPress={handleDeactivate}>
-            <Feather name="shield-off" size={20} color="#fff" />
-            <Text style={styles.deactivateBtnText}>Deactivate Emergency</Text>
-          </Pressable>
-          <Text style={styles.footerNote}>
-            Alert will be marked resolved in the database
-          </Text>
-        </View>
       </ScrollView>
+
+      {/* Fixed deactivate footer — always visible, never scrolls away */}
+      <View style={[styles.fixedFooter, { paddingBottom: bottomPad }]}>
+        <Pressable
+          style={[styles.deactivateBtn, deactivating && styles.deactivateBtnDisabled]}
+          onPress={handleDeactivate}
+          disabled={deactivating}
+        >
+          <Feather name="shield-off" size={22} color="#fff" />
+          <Text style={styles.deactivateBtnText}>
+            {deactivating ? "Deactivating..." : "Deactivate Emergency"}
+          </Text>
+        </Pressable>
+        <Text style={styles.footerNote}>Alert will be marked resolved in the database</Text>
+      </View>
     </View>
   );
 }
@@ -295,15 +292,10 @@ const styles = StyleSheet.create({
   },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary },
-  liveText: {
-    fontSize: 11,
-    fontFamily: "Inter_700Bold",
-    color: COLORS.primary,
-    letterSpacing: 2,
-  },
+  liveText: { fontSize: 11, fontFamily: "Inter_700Bold", color: COLORS.primary, letterSpacing: 2 },
   timer: { fontSize: 48, fontFamily: "Inter_700Bold", color: "#fff", letterSpacing: 2 },
   alertId: { fontSize: 11, fontFamily: "Inter_500Medium", color: COLORS.textMuted, marginTop: 4 },
-  content: { padding: 24, gap: 20, paddingBottom: 40 },
+  content: { padding: 24, gap: 20, paddingBottom: 16 },
   sosOrb: {
     alignSelf: "center",
     width: 120,
@@ -396,10 +388,19 @@ const styles = StyleSheet.create({
     color: COLORS.textSub,
     lineHeight: 18,
   },
-  footer: { alignItems: "center", gap: 10, marginTop: 8 },
+  fixedFooter: {
+    backgroundColor: "#050505",
+    borderTopWidth: 1,
+    borderTopColor: "#1A0000",
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    gap: 8,
+    alignItems: "center",
+  },
   deactivateBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     backgroundColor: "#2A0A0A",
     borderWidth: 1.5,
     borderColor: COLORS.primary,
@@ -408,8 +409,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     gap: 10,
     width: "100%",
-    justifyContent: "center",
   },
+  deactivateBtnDisabled: { opacity: 0.6 },
   deactivateBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#fff" },
   footerNote: { fontSize: 12, fontFamily: "Inter_400Regular", color: COLORS.textMuted },
 });

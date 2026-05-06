@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -36,16 +37,23 @@ function AddContactModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const canSave = name.trim().length > 0 && phone.trim().length > 0;
+
   const handleSave = async () => {
-    if (!name.trim() || !phone.trim()) {
-      setError("Please enter name and phone number.");
+    if (!canSave) {
+      setError("Please enter both name and phone number.");
       return;
     }
     setSaving(true);
     setError(null);
     try {
       if (editContact) {
-        await updateContact(editContact.id, { name: name.trim(), phone: phone.trim(), relationship, isPrimary });
+        await updateContact(editContact.id, {
+          name: name.trim(),
+          phone: phone.trim(),
+          relationship,
+          isPrimary,
+        });
       } else {
         await addContact({ name: name.trim(), phone: phone.trim(), relationship, isPrimary });
       }
@@ -61,95 +69,132 @@ function AddContactModal({
   if (!visible) return null;
 
   return (
-    <View style={modalStyles.overlay}>
-      <View style={modalStyles.container}>
+    <KeyboardAvoidingView
+      style={modalStyles.overlay}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <Pressable style={modalStyles.backdrop} onPress={onClose} />
+
+      <View style={modalStyles.sheet}>
+        {/* Header — always visible */}
+        <View style={modalStyles.handle} />
         <View style={modalStyles.header}>
           <Text style={modalStyles.title}>{editContact ? "Edit Contact" : "Add Contact"}</Text>
-          <Pressable onPress={onClose} disabled={saving}>
-            <Feather name="x" size={22} color={COLORS.textSub} />
+          <Pressable onPress={onClose} disabled={saving} style={modalStyles.closeBtn}>
+            <Feather name="x" size={20} color={COLORS.textSub} />
           </Pressable>
         </View>
 
-        {error && (
-          <View style={modalStyles.errorBox}>
-            <Feather name="alert-circle" size={14} color={COLORS.warning} />
-            <Text style={modalStyles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        <View style={modalStyles.field}>
-          <Text style={modalStyles.label}>Full Name</Text>
-          <TextInput
-            style={modalStyles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Priya Sharma"
-            placeholderTextColor={COLORS.textMuted}
-            autoCapitalize="words"
-            editable={!saving}
-          />
-        </View>
-
-        <View style={modalStyles.field}>
-          <Text style={modalStyles.label}>Phone Number</Text>
-          <TextInput
-            style={modalStyles.input}
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="+91 98765 43210"
-            placeholderTextColor={COLORS.textMuted}
-            keyboardType="phone-pad"
-            editable={!saving}
-          />
-        </View>
-
-        <View style={modalStyles.field}>
-          <Text style={modalStyles.label}>Relationship</Text>
-          <View style={modalStyles.chipRow}>
-            {RELATIONSHIPS.map((r) => (
-              <Pressable
-                key={r}
-                style={[modalStyles.chip, relationship === r && modalStyles.chipActive]}
-                onPress={() => setRelationship(r)}
-                disabled={saving}
-              >
-                <Text style={[modalStyles.chipText, relationship === r && modalStyles.chipTextActive]}>
-                  {r}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
-        <Pressable
-          style={modalStyles.primaryRow}
-          onPress={() => setIsPrimary((p) => !p)}
-          disabled={saving}
+        {/* Scrollable fields */}
+        <ScrollView
+          style={modalStyles.scrollArea}
+          contentContainerStyle={modalStyles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <View>
-            <Text style={modalStyles.primaryTitle}>Primary Contact</Text>
-            <Text style={modalStyles.primarySub}>Receives alerts first and immediately</Text>
-          </View>
-          <View style={[modalStyles.toggleSmall, isPrimary && modalStyles.toggleSmallActive]}>
-            <View style={[modalStyles.toggleKnobSmall, isPrimary && modalStyles.toggleKnobSmallActive]} />
-          </View>
-        </Pressable>
-
-        <Pressable
-          style={[modalStyles.saveBtn, saving && { opacity: 0.7 }]}
-          onPress={handleSave}
-          disabled={saving}
-        >
-          {saving ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={modalStyles.saveBtnText}>
-              {editContact ? "Save Changes" : "Add Contact"}
-            </Text>
+          {error && (
+            <View style={modalStyles.errorBox}>
+              <Feather name="alert-circle" size={14} color="#e57373" />
+              <Text style={modalStyles.errorText}>{error}</Text>
+            </View>
           )}
-        </Pressable>
+
+          <View style={modalStyles.field}>
+            <Text style={modalStyles.label}>Full Name *</Text>
+            <TextInput
+              style={modalStyles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. Priya Sharma"
+              placeholderTextColor={COLORS.textMuted}
+              autoCapitalize="words"
+              editable={!saving}
+              autoFocus
+            />
+          </View>
+
+          <View style={modalStyles.field}>
+            <Text style={modalStyles.label}>Phone Number *</Text>
+            <TextInput
+              style={modalStyles.input}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="+91 98765 43210"
+              placeholderTextColor={COLORS.textMuted}
+              keyboardType="phone-pad"
+              editable={!saving}
+            />
+          </View>
+
+          <View style={modalStyles.field}>
+            <Text style={modalStyles.label}>Relationship</Text>
+            <View style={modalStyles.chipRow}>
+              {RELATIONSHIPS.map((r) => (
+                <Pressable
+                  key={r}
+                  style={[modalStyles.chip, relationship === r && modalStyles.chipActive]}
+                  onPress={() => setRelationship(r)}
+                  disabled={saving}
+                >
+                  <Text
+                    style={[modalStyles.chipText, relationship === r && modalStyles.chipTextActive]}
+                  >
+                    {r}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <Pressable
+            style={modalStyles.primaryRow}
+            onPress={() => setIsPrimary((p) => !p)}
+            disabled={saving}
+          >
+            <View style={modalStyles.primaryLeft}>
+              <MaterialCommunityIcons
+                name="star-circle"
+                size={20}
+                color={isPrimary ? COLORS.warning : COLORS.textMuted}
+              />
+              <View>
+                <Text style={modalStyles.primaryTitle}>Primary Contact</Text>
+                <Text style={modalStyles.primarySub}>Receives alerts first and immediately</Text>
+              </View>
+            </View>
+            <View style={[modalStyles.toggleSmall, isPrimary && modalStyles.toggleSmallActive]}>
+              <View
+                style={[modalStyles.toggleKnobSmall, isPrimary && modalStyles.toggleKnobSmallActive]}
+              />
+            </View>
+          </Pressable>
+        </ScrollView>
+
+        {/* Save button — always pinned at bottom, never hidden */}
+        <View style={modalStyles.footer}>
+          <Pressable
+            style={[
+              modalStyles.saveBtn,
+              !canSave && modalStyles.saveBtnDisabled,
+              saving && { opacity: 0.7 },
+            ]}
+            onPress={handleSave}
+            disabled={saving || !canSave}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Feather name={editContact ? "check" : "user-plus"} size={18} color="#fff" />
+                <Text style={modalStyles.saveBtnText}>
+                  {editContact ? "Save Changes" : "Add Contact"}
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -249,7 +294,9 @@ export default function ContactsScreen() {
       <View style={[styles.header, { paddingTop: topPad }]}>
         <View>
           <Text style={styles.pageTitle}>Emergency Contacts</Text>
-          <Text style={styles.pageSubtitle}>{contacts.length} contact{contacts.length !== 1 ? "s" : ""} saved</Text>
+          <Text style={styles.pageSubtitle}>
+            {contacts.length} contact{contacts.length !== 1 ? "s" : ""} saved
+          </Text>
         </View>
         <View style={styles.headerRight}>
           <Pressable style={styles.refreshBtn} onPress={reloadContacts} disabled={isLoadingContacts}>
@@ -259,7 +306,13 @@ export default function ContactsScreen() {
               <Feather name="refresh-cw" size={16} color={COLORS.textMuted} />
             )}
           </Pressable>
-          <Pressable style={styles.addBtn} onPress={() => { setEditContact(null); setShowAdd(true); }}>
+          <Pressable
+            style={styles.addBtn}
+            onPress={() => {
+              setEditContact(null);
+              setShowAdd(true);
+            }}
+          >
             <Feather name="plus" size={20} color="#fff" />
           </Pressable>
         </View>
@@ -297,7 +350,10 @@ export default function ContactsScreen() {
                   <ContactCard
                     key={c.id}
                     contact={c}
-                    onEdit={() => { setEditContact(c); setShowAdd(true); }}
+                    onEdit={() => {
+                      setEditContact(c);
+                      setShowAdd(true);
+                    }}
                     onDelete={() => handleDelete(c.id, c.name)}
                     deleting={deletingIds.has(c.id)}
                   />
@@ -311,7 +367,10 @@ export default function ContactsScreen() {
                   <ContactCard
                     key={c.id}
                     contact={c}
-                    onEdit={() => { setEditContact(c); setShowAdd(true); }}
+                    onEdit={() => {
+                      setEditContact(c);
+                      setShowAdd(true);
+                    }}
                     onDelete={() => handleDelete(c.id, c.name)}
                     deleting={deletingIds.has(c.id)}
                   />
@@ -324,7 +383,8 @@ export default function ContactsScreen() {
         <View style={styles.infoCard}>
           <MaterialCommunityIcons name="information-outline" size={18} color={COLORS.primary} />
           <Text style={styles.infoText}>
-            All listed contacts receive SMS alerts with your live GPS location when SOS is triggered. Primary contacts are notified first.
+            All listed contacts receive SMS alerts with your live GPS location when SOS is
+            triggered. Primary contacts are notified first.
           </Text>
         </View>
       </ScrollView>
@@ -333,7 +393,10 @@ export default function ContactsScreen() {
         <AddContactModal
           visible={showAdd}
           editContact={editContact}
-          onClose={() => { setShowAdd(false); setEditContact(null); }}
+          onClose={() => {
+            setShowAdd(false);
+            setEditContact(null);
+          }}
         />
       )}
     </View>
@@ -350,7 +413,12 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   pageTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: COLORS.text },
-  pageSubtitle: { fontSize: 12, fontFamily: "Inter_400Regular", color: COLORS.textMuted, marginTop: 2 },
+  pageSubtitle: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   refreshBtn: {
     width: 36,
@@ -474,35 +542,59 @@ const styles = StyleSheet.create({
 const modalStyles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.85)",
     justifyContent: "flex-end",
     zIndex: 999,
   },
-  container: {
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.75)",
+  },
+  sheet: {
     backgroundColor: COLORS.bgCard,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    padding: 24,
-    gap: 16,
+    maxHeight: "90%",
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    alignSelf: "center",
+    marginTop: 12,
+    marginBottom: 4,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   title: { fontSize: 20, fontFamily: "Inter_700Bold", color: COLORS.text },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.bgCard2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scrollArea: { flexShrink: 1 },
+  scrollContent: { paddingHorizontal: 24, paddingVertical: 16, gap: 16 },
   errorBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: COLORS.warning + "15",
+    backgroundColor: "#3D1515",
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: COLORS.warning + "30",
+    borderColor: "#7B2020",
   },
-  errorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: COLORS.textSub },
+  errorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: "#e57373" },
   field: { gap: 6 },
   label: {
     fontSize: 12,
@@ -515,7 +607,7 @@ const modalStyles = StyleSheet.create({
     backgroundColor: COLORS.bgCard2,
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingVertical: 14,
     fontSize: 15,
     fontFamily: "Inter_400Regular",
     color: COLORS.text,
@@ -544,8 +636,9 @@ const modalStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  primaryLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
   primaryTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: COLORS.text },
-  primarySub: { fontSize: 11, fontFamily: "Inter_400Regular", color: COLORS.textMuted, marginTop: 2 },
+  primarySub: { fontSize: 11, fontFamily: "Inter_400Regular", color: COLORS.textMuted, marginTop: 1 },
   toggleSmall: {
     width: 44,
     height: 26,
@@ -557,14 +650,23 @@ const modalStyles = StyleSheet.create({
   toggleSmallActive: { backgroundColor: COLORS.success },
   toggleKnobSmall: { width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff" },
   toggleKnobSmallActive: { alignSelf: "flex-end" },
+  footer: {
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 28,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
   saveBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     backgroundColor: COLORS.primary,
     borderRadius: 14,
     paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 4,
     height: 52,
-    justifyContent: "center",
   },
+  saveBtnDisabled: { backgroundColor: COLORS.textMuted + "60" },
   saveBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#fff" },
 });
