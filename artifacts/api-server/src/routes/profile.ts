@@ -9,7 +9,9 @@ router.get("/profile", async (_req, res) => {
   try {
     const profiles = await db.select().from(profilesTable).where(eq(profilesTable.id, "default"));
     if (!profiles.length) {
-      return res.status(404).json({ error: "Profile not found" });
+      // Return a blank default profile so the client has a clean initial state
+      const now = new Date().toISOString();
+      return res.json({ id: "default", name: "", phone: "", bloodGroup: "", medicalNotes: "", createdAt: now, updatedAt: now });
     }
     const p = profiles[0];
     return res.json({

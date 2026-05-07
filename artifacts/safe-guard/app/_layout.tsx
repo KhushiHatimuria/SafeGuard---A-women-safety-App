@@ -32,6 +32,10 @@ function RootLayoutNav() {
         name="permissions"
         options={{ headerShown: false, presentation: "modal" }}
       />
+      <Stack.Screen
+        name="video-recorder"
+        options={{ headerShown: false, presentation: "fullScreenModal" }}
+      />
     </Stack>
   );
 }

@@ -37,10 +37,15 @@ export default function SOSActiveScreen() {
   const { contacts, deactivateSOS, activeAlertId } = useSafeGuard();
   const [location, setLocation] = useState<LocationCoords | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [alertsSent, setAlertsSent] = useState(false);
+  const [contactsNotified, setContactsNotified] = useState<number | null>(null);
+  const [smsStatus, setSmsStatus] = useState<"pending" | "sent" | "no_sms">("pending");
   const [deactivating, setDeactivating] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const alertIdRef = useRef(activeAlertId);
+
+  useEffect(() => { alertIdRef.current = activeAlertId; }, [activeAlertId]);
 
   const pulseScale = useSharedValue(1);
   const dotOpacity = useSharedValue(1);
@@ -74,13 +79,56 @@ export default function SOSActiveScreen() {
     }, 1000);
 
     startLocationTracking();
-    setTimeout(() => setAlertsSent(true), 2000);
+    pollAlertStatus();
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (locationWatchRef.current) locationWatchRef.current.remove();
+      if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, []);
+
+  // Poll for real contactsNotified count from the server
+  const pollAlertStatus = async () => {
+    const maxAttempts = 8;
+    let attempt = 0;
+    const poll = async () => {
+      attempt++;
+      const id = alertIdRef.current;
+      if (!id) {
+        if (attempt < maxAttempts) {
+          pollRef.current = setTimeout(poll, 2000);
+        } else {
+          setSmsStatus("no_sms");
+        }
+        return;
+      }
+      try {
+        const alerts = await api.alerts.list();
+        const thisAlert = alerts.find((a) => a.id === id);
+        if (thisAlert) {
+          setContactsNotified(thisAlert.contactsNotified);
+          if (thisAlert.contactsNotified > 0) {
+            setSmsStatus("sent");
+            return;
+          }
+        }
+        if (attempt < maxAttempts) {
+          pollRef.current = setTimeout(poll, 2500);
+        } else {
+          setSmsStatus("no_sms");
+          setContactsNotified(0);
+        }
+      } catch {
+        if (attempt < maxAttempts) {
+          pollRef.current = setTimeout(poll, 3000);
+        } else {
+          setSmsStatus("no_sms");
+        }
+      }
+    };
+    pollRef.current = setTimeout(poll, 3000);
+  };
 
   const startLocationTracking = async () => {
     try {
@@ -95,9 +143,10 @@ export default function SOSActiveScreen() {
               accuracy: loc.coords.accuracy,
             };
             setLocation(coords);
-            if (activeAlertId) {
+            const id = alertIdRef.current;
+            if (id) {
               api.alerts
-                .pushLocation(activeAlertId, {
+                .pushLocation(id, {
                   latitude: coords.latitude,
                   longitude: coords.longitude,
                   accuracy: coords.accuracy ?? undefined,
@@ -121,12 +170,13 @@ export default function SOSActiveScreen() {
     setDeactivating(true);
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     if (locationWatchRef.current) locationWatchRef.current.remove();
+    if (pollRef.current) clearTimeout(pollRef.current);
     await deactivateSOS();
     router.replace("/(tabs)");
   };
 
   const handleRecordVideo = () => {
-    router.push("/video-recorder" as any);
+    router.push("/video-recorder");
   };
 
   const pulseStyle = useAnimatedStyle(() => ({
@@ -138,12 +188,28 @@ export default function SOSActiveScreen() {
   const topPad = insets.top + (Platform.OS === "web" ? 67 : 0);
   const bottomPad = insets.bottom + 16;
 
+  const smsLabel = () => {
+    if (smsStatus === "pending") return "Dispatching alerts...";
+    if (smsStatus === "sent" && contactsNotified != null && contactsNotified > 0) {
+      return `${contactsNotified} SMS sent successfully`;
+    }
+    return contacts.length > 0
+      ? "SMS alerts queued (Twilio not configured)"
+      : "No contacts to notify";
+  };
+
+  const smsDotColor = () => {
+    if (smsStatus === "sent" && (contactsNotified ?? 0) > 0) return COLORS.success;
+    if (smsStatus === "no_sms") return COLORS.warning;
+    return COLORS.warning;
+  };
+
   return (
     <View style={styles.container}>
       {Platform.OS !== "web" && <StatusBar barStyle="light-content" backgroundColor="#000" />}
 
       {/* Fixed header */}
-      <View style={[styles.header, { paddingTop: topPad }]}>
+      <View style={[styles.header, { paddingTop: topPad + 12 }]}>
         <View style={styles.statusRow}>
           <Animated.View style={[styles.liveDot, dotStyle]} />
           <Text style={styles.liveText}>EMERGENCY ACTIVE</Text>
@@ -214,18 +280,16 @@ export default function SOSActiveScreen() {
           <View style={styles.statusCard}>
             <MaterialCommunityIcons name="send-check" size={18} color={COLORS.primary} />
             <View style={styles.statusCardContent}>
-              <Text style={styles.statusCardTitle}>Alerts Dispatched</Text>
-              <Text style={styles.statusCardValue}>
-                {alertsSent
-                  ? `${allContacts.length} contact${allContacts.length !== 1 ? "s" : ""} notified`
-                  : "Sending alerts..."}
-              </Text>
+              <Text style={styles.statusCardTitle}>SMS Alerts</Text>
+              <Text style={styles.statusCardValue}>{smsLabel()}</Text>
+              {smsStatus === "no_sms" && contacts.length > 0 && (
+                <Text style={styles.statusCardSub}>
+                  Configure Twilio in Secrets to enable SMS
+                </Text>
+              )}
             </View>
             <View
-              style={[
-                styles.statusDot,
-                { backgroundColor: alertsSent ? COLORS.success : COLORS.warning },
-              ]}
+              style={[styles.statusDot, { backgroundColor: smsDotColor() }]}
             />
           </View>
         </View>
@@ -250,7 +314,7 @@ export default function SOSActiveScreen() {
                 <Feather
                   name="check-circle"
                   size={18}
-                  color={alertsSent ? COLORS.success : COLORS.textMuted}
+                  color={smsStatus === "sent" ? COLORS.success : COLORS.textMuted}
                 />
               </View>
             ))}
@@ -267,9 +331,8 @@ export default function SOSActiveScreen() {
         )}
       </ScrollView>
 
-      {/* Fixed footer — always visible */}
+      {/* Fixed footer */}
       <View style={[styles.fixedFooter, { paddingBottom: bottomPad }]}>
-        {/* Record Video button */}
         <Pressable style={styles.recordBtn} onPress={handleRecordVideo}>
           <Feather name="camera" size={18} color={COLORS.primary} />
           <Text style={styles.recordBtnText}>Record Video Evidence</Text>

@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system";
+import * as Location from "expo-location";
 import { Accelerometer } from "expo-sensors";
 import React, {
   createContext,
@@ -153,7 +154,7 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
     loadRemoteData();
   }, []);
 
-  // ── Monitoring schedule enforcement ──────────────────────────────────────
+  // ── Monitoring schedule enforcement ───────────────────────────────────────
   useEffect(() => {
     if (!monitoring.enabled) {
       setIsMonitoringActive(false);
@@ -173,10 +174,8 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
 
       let inWindow: boolean;
       if (startMins <= endMins) {
-        // Same-day window (e.g. 08:00–18:00)
         inWindow = currentMins >= startMins && currentMins < endMins;
       } else {
-        // Overnight window (e.g. 22:00–06:00)
         inWindow = currentMins >= startMins || currentMins < endMins;
       }
       setIsMonitoringActive(inWindow);
@@ -221,11 +220,17 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
         const parsed = JSON.parse(monitoringData);
         setMonitoring({ ...DEFAULT_MONITORING, ...parsed });
       }
+      // Load cached alert count immediately for fast display
+      const cached = await AsyncStorage.getItem(STORAGE_KEYS.alertCount);
+      if (cached) setAlertCount(parseInt(cached, 10));
     } catch {}
   };
 
   const loadRemoteData = async () => {
-    await Promise.all([reloadContacts(), reloadProfile(), reloadAlertCount()]);
+    // Load contacts and profile in parallel, don't block rendering
+    reloadContacts().catch(() => {});
+    reloadProfile().catch(() => {});
+    reloadAlertCount().catch(() => {});
   };
 
   const reloadContacts = async () => {
@@ -265,13 +270,7 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
       const count = alerts.length;
       setAlertCount(count);
       AsyncStorage.setItem(STORAGE_KEYS.alertCount, String(count));
-    } catch {
-      // Fall back to cached value
-      try {
-        const cached = await AsyncStorage.getItem(STORAGE_KEYS.alertCount);
-        if (cached) setAlertCount(parseInt(cached, 10));
-      } catch {}
-    }
+    } catch {}
   };
 
   // ── Accelerometer motion detection ────────────────────────────────────────
@@ -418,6 +417,24 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // ── Helper: get current location ─────────────────────────────────────────
+  const getCurrentLocation = async (): Promise<{ latitude: number; longitude: number; accuracy: number } | null> => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return null;
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      return {
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        accuracy: loc.coords.accuracy ?? 0,
+      };
+    } catch {
+      return null;
+    }
+  };
+
   // ── SOS flow ───────────────────────────────────────────────────────────────
   const triggerSOS = useCallback((triggerType: TriggerType = "manual") => {
     triggerTypeRef.current = triggerType;
@@ -433,13 +450,18 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
     setSosState("active");
     if (Platform.OS !== "web") Vibration.vibrate([0, 500, 200, 500, 200, 500]);
     try {
+      // Try to get location to include in the initial alert
+      const loc = Platform.OS !== "web" ? await getCurrentLocation() : null;
+
       const alert = await api.alerts.create({
         triggerType,
+        latitude: loc?.latitude,
+        longitude: loc?.longitude,
+        accuracy: loc?.accuracy,
         contactsNotified: 0,
         audioRecorded: false,
       });
       setActiveAlertId(alert.id);
-      // Update local alert count
       setAlertCount((prev) => {
         const next = prev + 1;
         AsyncStorage.setItem(STORAGE_KEYS.alertCount, String(next));
