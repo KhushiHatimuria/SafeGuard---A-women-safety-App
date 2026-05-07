@@ -38,6 +38,10 @@ function RootLayoutNav() {
         name="video-recorder"
         options={{ headerShown: false, presentation: "fullScreenModal" }}
       />
+      <Stack.Screen
+        name="fake-call"
+        options={{ headerShown: false, presentation: "fullScreenModal" }}
+      />
     </Stack>
   );
 }
@@ -52,9 +56,8 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
-    ...(Platform.OS === "web"
-      ? { ...MaterialCommunityIcons.font, ...Feather.font }
-      : {}),
+    ...MaterialCommunityIcons.font,
+    ...Feather.font,
   });
 
   const [timedOut, setTimedOut] = React.useState(false);

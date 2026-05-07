@@ -272,6 +272,14 @@ export default function HomeScreen() {
               <Feather name="user" size={24} color={COLORS.primary} />
               <Text style={styles.actionLabel}>Profile</Text>
             </Pressable>
+            <Pressable
+              style={[styles.actionCard, styles.fakeCallCard]}
+              onPress={() => router.push("/fake-call")}
+            >
+              <MaterialCommunityIcons name="phone-incoming" size={24} color="#22c55e" />
+              <Text style={[styles.actionLabel, { color: "#22c55e" }]}>Fake Call</Text>
+              <Text style={styles.fakeCallHint}>Fool attacker</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -522,6 +530,16 @@ const styles = StyleSheet.create({
     gap: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  fakeCallCard: {
+    borderColor: "rgba(34,197,94,0.3)",
+    backgroundColor: "rgba(34,197,94,0.06)",
+  },
+  fakeCallHint: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(34,197,94,0.6)",
+    marginTop: -4,
   },
   actionLabel: { fontSize: 13, fontFamily: "Inter_500Medium", color: COLORS.textSub },
   setupBanner: {

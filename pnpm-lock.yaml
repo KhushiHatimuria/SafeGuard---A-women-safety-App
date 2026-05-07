@@ -428,6 +428,9 @@ importers:
       expo-sms:
         specifier: ~13.0.1
         version: 13.0.1(expo@54.0.33)
+      expo-speech:
+        specifier: ^55.0.13
+        version: 55.0.13(expo@54.0.33)
       http-proxy:
         specifier: ^1.18.1
         version: 1.18.1
@@ -3592,6 +3595,11 @@ packages:
 
   expo-sms@13.0.1:
     resolution: {integrity: sha512-nb9VMfTZinuFdR4NULoBjrDQVssyKhyw5IZfKOjUjXHTA3kqFsz0FtA+VAZpGCtk+N2l4tvNst0gSMm/0WV6NQ==}
+    peerDependencies:
+      expo: '*'
+
+  expo-speech@55.0.13:
+    resolution: {integrity: sha512-DZzwe9Z6NhHmNi5ICwYE9BgcNmE3U8t0pSlg1vs18f6omyD88e1ZqCJ0as1aWgZYO3WtbcwWqCTboV8QMwtOow==}
     peerDependencies:
       expo: '*'
 
@@ -9578,6 +9586,10 @@ snapshots:
   expo-server@1.0.5: {}
 
   expo-sms@13.0.1(expo@54.0.33):
+    dependencies:
+      expo: 54.0.33(@babel/core@7.29.0)(@expo/metro-runtime@6.1.2)(expo-router@6.0.23)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+
+  expo-speech@55.0.13(expo@54.0.33):
     dependencies:
       expo: 54.0.33(@babel/core@7.29.0)(@expo/metro-runtime@6.1.2)(expo-router@6.0.23)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
 
