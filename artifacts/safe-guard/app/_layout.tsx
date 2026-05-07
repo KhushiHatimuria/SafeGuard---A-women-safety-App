@@ -5,7 +5,6 @@ import {
   Inter_700Bold,
   useFonts,
 } from "@expo-google-fonts/inter";
-import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -42,14 +41,15 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  // Only load Inter fonts here.
+  // @expo/vector-icons (Feather, MaterialCommunityIcons) are pre-bundled inside
+  // Expo Go and loaded lazily — DO NOT spread them into useFonts here, as that
+  // causes conflicts and blank icons in Expo Go on Android.
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
-    // Preload vector icon fonts so tab icons appear immediately on all platforms
-    ...Feather.font,
-    ...MaterialCommunityIcons.font,
   });
 
   useEffect(() => {

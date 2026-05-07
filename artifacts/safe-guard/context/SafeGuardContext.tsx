@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import * as Location from "expo-location";
+import * as SMS from "expo-sms";
 import { Accelerometer } from "expo-sensors";
 import React, {
   createContext,
@@ -142,11 +143,13 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
   const sosStateRef = useRef<SOSState>("idle");
   const monitoringRef = useRef<MonitoringSchedule>(DEFAULT_MONITORING);
   const isMonitoringActiveRef = useRef(false);
+  const contactsRef = useRef<Contact[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   // Keep refs in sync so closures have fresh values
   useEffect(() => { sosStateRef.current = sosState; }, [sosState]);
   useEffect(() => { monitoringRef.current = monitoring; }, [monitoring]);
+  useEffect(() => { contactsRef.current = contacts; }, [contacts]);
   useEffect(() => { isMonitoringActiveRef.current = isMonitoringActive; }, [isMonitoringActive]);
 
   useEffect(() => {
@@ -450,15 +453,41 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
     setSosState("active");
     if (Platform.OS !== "web") Vibration.vibrate([0, 500, 200, 500, 200, 500]);
     try {
-      // Try to get location to include in the initial alert
-      const loc = Platform.OS !== "web" ? await getCurrentLocation() : null;
+      // Get location and contacts snapshot in parallel
+      const [loc, currentContacts] = await Promise.all([
+        Platform.OS !== "web" ? getCurrentLocation() : Promise.resolve(null),
+        Promise.resolve(contactsRef.current),
+      ]);
 
+      // Build the SMS message
+      const mapLink = loc
+        ? ` Location: https://maps.google.com/?q=${loc.latitude},${loc.longitude}`
+        : "";
+      const sosMessage = `🚨 EMERGENCY ALERT! I may be in danger and need help immediately.${mapLink} — SafeGuard`;
+
+      // Send SMS directly from device using expo-sms (works without any API key)
+      let deviceSmsSent = 0;
+      if (Platform.OS !== "web" && currentContacts.length > 0) {
+        try {
+          const isAvailable = await SMS.isAvailableAsync();
+          if (isAvailable) {
+            const phones = currentContacts.map((c) => c.phone);
+            const { result } = await SMS.sendSMSAsync(phones, sosMessage);
+            // result is "sent", "cancelled", or "unknown"
+            if (result === "sent") deviceSmsSent = currentContacts.length;
+          }
+        } catch {
+          // SMS sending failed — server-side TextBelt will still try
+        }
+      }
+
+      // Create alert record on server (server also attempts TextBelt SMS as backup)
       const alert = await api.alerts.create({
         triggerType,
         latitude: loc?.latitude,
         longitude: loc?.longitude,
         accuracy: loc?.accuracy,
-        contactsNotified: 0,
+        contactsNotified: deviceSmsSent,
         audioRecorded: false,
       });
       setActiveAlertId(alert.id);

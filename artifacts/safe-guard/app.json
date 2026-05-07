@@ -41,6 +41,7 @@
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED",
         "ACTIVITY_RECOGNITION",
+        "SEND_SMS",
         "READ_MEDIA_VIDEO",
         "READ_MEDIA_IMAGES",
         "WRITE_EXTERNAL_STORAGE",
@@ -72,8 +73,7 @@
         "expo-media-library",
         {
           "photosPermission": "SafeGuard saves emergency video evidence to your photo library.",
-          "savePhotosPermission": "SafeGuard saves emergency video evidence to your photo library.",
-          "isAccessMediaLocationEnabled": true
+          "savePhotosPermission": "SafeGuard saves emergency video evidence to your photo library."
         }
       ]
     ],

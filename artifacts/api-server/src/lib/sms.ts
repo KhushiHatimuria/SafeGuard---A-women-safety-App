@@ -1,30 +1,37 @@
-import twilio from "twilio";
+// TextBelt — simple REST SMS API (no SDK required)
+// Free key "textbelt" = 1 SMS/day per IP (testing only)
+// Set TEXTBELT_API_KEY to a paid key for unlimited global SMS
+// Purchase at: https://textbelt.com
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+const TEXTBELT_KEY = process.env.TEXTBELT_API_KEY || "textbelt";
+const TEXTBELT_URL = "https://textbelt.com/text";
 
 function toE164(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (phone.startsWith("+")) return `+${digits}`;
+  if (phone.startsWith("+")) return phone;
   return `+${digits}`;
 }
 
 export async function sendSMS(to: string, body: string): Promise<boolean> {
-  if (!accountSid || !authToken || !fromNumber) {
-    console.warn("[sms] Twilio not configured — set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER");
-    return false;
-  }
-  const normalizedTo = toE164(to);
+  const normalized = toE164(to);
   try {
-    const client = twilio(accountSid, authToken);
-    const msg = await client.messages.create({ body, from: fromNumber, to: normalizedTo });
-    console.info(`[sms] Sent to ${normalizedTo} — SID: ${msg.sid}`);
-    return true;
+    const res = await fetch(TEXTBELT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: normalized, message: body, key: TEXTBELT_KEY }),
+    });
+    const data = (await res.json()) as { success: boolean; error?: string; quotaRemaining?: number };
+    if (data.success) {
+      console.info(`[sms] TextBelt sent to ${normalized} — quota remaining: ${data.quotaRemaining}`);
+      return true;
+    } else {
+      console.error(`[sms] TextBelt failed for ${normalized}: ${data.error}`);
+      return false;
+    }
   } catch (err: any) {
-    console.error(`[sms] Failed to send SMS to ${normalizedTo}:`, err?.message ?? err);
+    console.error(`[sms] TextBelt request error: ${err?.message ?? err}`);
     return false;
   }
 }

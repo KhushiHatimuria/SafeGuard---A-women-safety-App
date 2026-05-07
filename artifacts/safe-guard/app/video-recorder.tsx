@@ -3,7 +3,7 @@ import { CameraView, CameraType, useCameraPermissions, useMicrophonePermissions 
 import * as Haptics from "expo-haptics";
 import * as MediaLibrary from "expo-media-library";
 import { router } from "expo-router";
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useCallback } from "react";
 import {
   Alert,
   Platform,
@@ -26,7 +26,6 @@ export default function VideoRecorderScreen() {
   const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
-  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
   const [isRecording, setIsRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [facing, setFacing] = useState<CameraType>("back");
@@ -36,16 +35,7 @@ export default function VideoRecorderScreen() {
   const isRecordingRef = useRef(false);
 
   const dotOpacity = useSharedValue(1);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
-  const dotStyle = useAnimatedStyle(() => ({
-    opacity: dotOpacity.value,
-  }));
+  const dotStyle = useAnimatedStyle(() => ({ opacity: dotOpacity.value }));
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, "0");
@@ -53,14 +43,26 @@ export default function VideoRecorderScreen() {
     return `${m}:${s}`;
   };
 
+  // Save video to library — handles Expo Go limitations gracefully
+  const trySaveToLibrary = async (uri: string) => {
+    try {
+      // Request permission at save-time (not on mount — avoids Expo Go crash)
+      const { status } = await MediaLibrary.requestPermissionsAsync(false);
+      if (status === "granted") {
+        await MediaLibrary.saveToLibraryAsync(uri);
+        return true;
+      }
+    } catch (e: any) {
+      // Expo Go on Android 13+ cannot access full media library — this is expected
+      console.warn("[video] Could not save to library:", e?.message);
+    }
+    return false;
+  };
+
   const startRecording = useCallback(async () => {
     if (!cameraRef.current || !isCameraReady || isRecordingRef.current) return;
-
     try {
-      if (Platform.OS !== "web") {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      }
-
+      if (Platform.OS !== "web") await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       isRecordingRef.current = true;
       setIsRecording(true);
       setElapsed(0);
@@ -69,91 +71,53 @@ export default function VideoRecorderScreen() {
 
       const video = await cameraRef.current.recordAsync({ maxDuration: 300 });
 
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       dotOpacity.value = 1;
       isRecordingRef.current = false;
       setIsRecording(false);
 
       if (video?.uri) {
-        if (mediaPermission?.granted) {
-          try {
-            await MediaLibrary.saveToLibraryAsync(video.uri);
-            if (Platform.OS !== "web") {
-              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            }
-            Alert.alert(
-              "Video Saved",
-              "Your evidence video has been saved to your photo library.",
-              [{ text: "OK", onPress: () => router.back() }]
-            );
-          } catch {
-            Alert.alert(
-              "Video Recorded",
-              "Video recorded but could not be saved to library. Grant media library permission to save it.",
-              [{ text: "OK", onPress: () => router.back() }]
-            );
-          }
-        } else {
-          Alert.alert(
-            "Video Recorded",
-            "Grant media library permission to save your evidence video permanently.",
-            [
-              { text: "Grant Access", onPress: async () => { await requestMediaPermission(); router.back(); } },
-              { text: "Dismiss", onPress: () => router.back() },
-            ]
-          );
-        }
+        if (Platform.OS !== "web") await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const saved = await trySaveToLibrary(video.uri);
+        Alert.alert(
+          saved ? "Video Saved" : "Video Recorded",
+          saved
+            ? "Evidence video saved to your photo library."
+            : "Video recorded. To save permanently, grant Media Library access in device settings.",
+          [{ text: "OK", onPress: () => router.back() }]
+        );
       }
     } catch (e: any) {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
       dotOpacity.value = 1;
       isRecordingRef.current = false;
       setIsRecording(false);
-      // If it was stopped intentionally, the promise rejects — that's fine
-      if (!String(e?.message).includes("cancelled") && !String(e?.message).includes("stopped")) {
-        console.warn("Recording error:", e);
+      // Suppress expected "recording stopped" error
+      if (!String(e?.message).toLowerCase().includes("cancel") &&
+          !String(e?.message).toLowerCase().includes("stop")) {
+        console.warn("[video] Recording error:", e?.message);
       }
     }
-  }, [isCameraReady, mediaPermission]);
+  }, [isCameraReady]);
 
   const stopRecording = useCallback(() => {
     if (!cameraRef.current || !isRecordingRef.current) return;
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     cameraRef.current.stopRecording();
   }, []);
-
-  const handleRecordPress = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  };
 
   const handleRequestPermissions = async () => {
     await requestCameraPermission();
     await requestMicPermission();
-    if (!mediaPermission?.granted) await requestMediaPermission();
   };
 
-  // Web: camera recording not available
   if (Platform.OS === "web") {
     return (
       <View style={[styles.container, styles.centered]}>
         <View style={styles.card}>
           <Feather name="camera-off" size={48} color={COLORS.textMuted} />
           <Text style={styles.cardTitle}>Camera Not Available</Text>
-          <Text style={styles.cardText}>
-            Video recording is available on iOS and Android devices only.
-          </Text>
+          <Text style={styles.cardText}>Video recording requires iOS or Android.</Text>
           <Pressable style={styles.primaryBtn} onPress={() => router.back()}>
             <Feather name="arrow-left" size={18} color="#fff" />
             <Text style={styles.primaryBtnText}>Go Back</Text>
@@ -163,7 +127,6 @@ export default function VideoRecorderScreen() {
     );
   }
 
-  // Permissions not yet determined
   if (!cameraPermission || !micPermission) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -172,7 +135,6 @@ export default function VideoRecorderScreen() {
     );
   }
 
-  // Camera or mic permission denied
   if (!cameraPermission.granted || !micPermission.granted) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -180,7 +142,7 @@ export default function VideoRecorderScreen() {
           <Feather name="camera" size={48} color={COLORS.primary} />
           <Text style={styles.cardTitle}>Permissions Required</Text>
           <Text style={styles.cardText}>
-            SafeGuard needs camera and microphone access to record video evidence during an emergency.
+            Camera and microphone access are needed to record emergency evidence.
           </Text>
           <Pressable style={styles.primaryBtn} onPress={handleRequestPermissions}>
             <Text style={styles.primaryBtnText}>Grant Permissions</Text>
@@ -203,15 +165,9 @@ export default function VideoRecorderScreen() {
         onCameraReady={() => setIsCameraReady(true)}
       />
 
-      {/* Top overlay */}
-      <View style={[styles.topOverlay, { paddingTop: insets.top + 12 }]}>
-        <Pressable
-          style={styles.iconBtn}
-          onPress={() => {
-            if (isRecording) stopRecording();
-            else router.back();
-          }}
-        >
+      {/* Top bar */}
+      <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+        <Pressable style={styles.iconBtn} onPress={() => { if (isRecording) stopRecording(); else router.back(); }}>
           <Feather name="x" size={20} color="#fff" />
         </Pressable>
 
@@ -222,10 +178,7 @@ export default function VideoRecorderScreen() {
           </View>
         )}
 
-        <Pressable
-          style={styles.iconBtn}
-          onPress={() => setFacing((f) => (f === "back" ? "front" : "back"))}
-        >
+        <Pressable style={styles.iconBtn} onPress={() => setFacing((f) => (f === "back" ? "front" : "back"))}>
           <Feather name="refresh-cw" size={20} color="#fff" />
         </Pressable>
       </View>
@@ -234,23 +187,14 @@ export default function VideoRecorderScreen() {
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 24 }]}>
         <Text style={styles.evidenceLabel}>EVIDENCE RECORDING</Text>
         <Text style={styles.evidenceHint}>
-          {!isCameraReady
-            ? "Camera initialising..."
-            : isRecording
-            ? "Recording — tap to stop"
-            : "Tap to start recording"}
+          {!isCameraReady ? "Camera initialising..." : isRecording ? "Recording — tap to stop" : "Tap to start recording"}
         </Text>
-
         <Pressable
           style={[styles.recordBtn, isRecording && styles.recordBtnActive, !isCameraReady && styles.recordBtnDisabled]}
-          onPress={handleRecordPress}
+          onPress={isRecording ? stopRecording : startRecording}
           disabled={!isCameraReady}
         >
-          {isRecording ? (
-            <View style={styles.stopIcon} />
-          ) : (
-            <View style={styles.recordIcon} />
-          )}
+          {isRecording ? <View style={styles.stopIcon} /> : <View style={styles.recordIcon} />}
         </Pressable>
       </View>
     </View>
@@ -262,107 +206,31 @@ const styles = StyleSheet.create({
   centered: { alignItems: "center", justifyContent: "center", padding: 24 },
   loadingText: { fontSize: 14, fontFamily: "Inter_400Regular", color: COLORS.textMuted },
   card: {
-    alignItems: "center",
-    backgroundColor: COLORS.bgCard,
-    borderRadius: 20,
-    padding: 32,
-    gap: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    width: "100%",
+    alignItems: "center", backgroundColor: COLORS.bgCard, borderRadius: 20,
+    padding: 32, gap: 16, borderWidth: 1, borderColor: COLORS.border, width: "100%",
   },
   cardTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: COLORS.text, textAlign: "center" },
-  cardText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: COLORS.textSub,
-    textAlign: "center",
-    lineHeight: 20,
-  },
+  cardText: { fontSize: 14, fontFamily: "Inter_400Regular", color: COLORS.textSub, textAlign: "center", lineHeight: 20 },
   primaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: COLORS.primary,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    width: "100%",
-    justifyContent: "center",
+    flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: COLORS.primary,
+    borderRadius: 14, paddingVertical: 14, paddingHorizontal: 24, width: "100%", justifyContent: "center",
   },
   primaryBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#fff" },
-  secondaryBtn: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    width: "100%",
-    alignItems: "center",
-  },
+  secondaryBtn: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 28, width: "100%", alignItems: "center" },
   secondaryBtnText: { fontSize: 15, fontFamily: "Inter_500Medium", color: COLORS.textSub },
-  topOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+  topBar: {
+    position: "absolute", top: 0, left: 0, right: 0,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingBottom: 12,
   },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  recBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(180,0,0,0.85)",
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-  },
+  iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center" },
+  recBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(180,0,0,0.85)", paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20 },
   recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },
   recText: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#fff", letterSpacing: 1 },
-  bottomBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    gap: 8,
-    paddingTop: 20,
-    backgroundColor: "rgba(0,0,0,0.55)",
-  },
-  evidenceLabel: {
-    fontSize: 11,
-    fontFamily: "Inter_700Bold",
-    color: COLORS.primary,
-    letterSpacing: 2,
-  },
-  evidenceHint: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: "rgba(255,255,255,0.75)",
-    marginBottom: 8,
-  },
-  recordBtn: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 4,
-    borderColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
+  bottomBar: { position: "absolute", bottom: 0, left: 0, right: 0, alignItems: "center", gap: 8, paddingTop: 20, backgroundColor: "rgba(0,0,0,0.55)" },
+  evidenceLabel: { fontSize: 11, fontFamily: "Inter_700Bold", color: COLORS.primary, letterSpacing: 2 },
+  evidenceHint: { fontSize: 13, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.75)", marginBottom: 8 },
+  recordBtn: { width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: "#fff", alignItems: "center", justifyContent: "center", marginBottom: 8 },
   recordBtnActive: { borderColor: COLORS.primary },
   recordBtnDisabled: { opacity: 0.4 },
   recordIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: COLORS.primary },
