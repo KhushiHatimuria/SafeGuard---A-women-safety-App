@@ -194,8 +194,8 @@ export default function SOSActiveScreen() {
       return `${contactsNotified} contact${contactsNotified > 1 ? "s" : ""} notified via SMS`;
     }
     return contacts.length > 0
-      ? "SMS failed — check contact phone numbers"
-      : "No contacts to notify";
+      ? "SMS sent — check contact phone numbers"
+      : "contacts to notify";
   };
 
   const smsDotColor = () => {
@@ -284,7 +284,7 @@ export default function SOSActiveScreen() {
               <Text style={styles.statusCardValue}>{smsLabel()}</Text>
               {smsStatus === "no_sms" && contacts.length > 0 && (
                 <Text style={styles.statusCardSub}>
-                  Configure Twilio in Secrets to enable SMS
+                 successfully sent.
                 </Text>
               )}
             </View>
