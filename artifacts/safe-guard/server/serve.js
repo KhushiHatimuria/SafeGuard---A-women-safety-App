@@ -4,18 +4,19 @@
  * Serves the output of build.js (static-build/) with two special routes:
  * - GET / or /manifest with expo-platform header → platform manifest JSON
  * - GET / without expo-platform → landing page HTML
+ * /api-server/api/* → proxied to API server at localhost:8080/api/*
  * Everything else falls through to static file serving from ./static-build/.
- *
- * Zero external dependencies — uses only Node.js built-ins (http, fs, path).
  */
 
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const httpProxy = require("http-proxy");
 
 const STATIC_ROOT = path.resolve(__dirname, "..", "static-build");
 const TEMPLATE_PATH = path.resolve(__dirname, "templates", "landing-page.html");
 const basePath = (process.env.BASE_PATH || "/").replace(/\/+$/, "");
+const API_PORT = 8080;
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -34,6 +35,16 @@ const MIME_TYPES = {
   ".otf": "font/otf",
   ".map": "application/json",
 };
+
+const proxy = httpProxy.createProxyServer({ changeOrigin: true });
+
+proxy.on("error", (err, _req, res) => {
+  console.error("[serve] API proxy error:", err.message);
+  if (res && !res.headersSent) {
+    res.writeHead(502, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "API unavailable" }));
+  }
+});
 
 function getAppName() {
   try {
@@ -108,7 +119,15 @@ const landingPageTemplate = fs.readFileSync(TEMPLATE_PATH, "utf-8");
 const appName = getAppName();
 
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const rawUrl = req.url || "/";
+
+  // Proxy API calls to the API server — same rewrite as dev proxy
+  if (rawUrl.startsWith("/api-server/api")) {
+    req.url = rawUrl.replace(/^\/api-server\/api/, "/api");
+    return proxy.web(req, res, { target: `http://localhost:${API_PORT}` });
+  }
+
+  const url = new URL(rawUrl, `http://${req.headers.host}`);
   let pathname = url.pathname;
 
   if (basePath && pathname.startsWith(basePath)) {
@@ -132,4 +151,5 @@ const server = http.createServer((req, res) => {
 const port = parseInt(process.env.PORT || "3000", 10);
 server.listen(port, "0.0.0.0", () => {
   console.log(`Serving static Expo build on port ${port}`);
+  console.log(`[serve] /api-server/api → localhost:${API_PORT}/api (proxy)`);
 });
