@@ -65,13 +65,22 @@ export default function PermissionsScreen() {
   };
 
   const checkAll = async () => {
+    const safeCheck = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+      try {
+        return await fn();
+      } catch {
+        return fallback;
+      }
+    };
+
     const [loc, mic, motion] = await Promise.all([
-      Location.getForegroundPermissionsAsync(),
-      Audio.getPermissionsAsync(),
-      checkMotionStatus(),
+      safeCheck(() => Location.getForegroundPermissionsAsync(), { granted: false, status: "undetermined" as const }),
+      safeCheck(() => Audio.getPermissionsAsync(), { granted: false, status: "undetermined" as const }),
+      safeCheck(() => checkMotionStatus(), "undetermined" as PermissionStatus),
     ]);
-    setLocationStatus(loc.granted ? "granted" : (loc.status as PermissionStatus));
-    setMicStatus(mic.granted ? "granted" : (mic.status as PermissionStatus));
+
+    setLocationStatus(loc.granted ? "granted" : (loc.status as PermissionStatus) === "denied" ? "denied" : "undetermined");
+    setMicStatus(mic.granted ? "granted" : (mic.status as PermissionStatus) === "denied" ? "denied" : "undetermined");
     setMotionStatus(motion);
 
     // Check notification permission — available on iOS/Android via expo-notifications
@@ -142,15 +151,23 @@ export default function PermissionsScreen() {
 
   const handleGrant = async (id: string) => {
     if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
     }
 
     if (id === "location") {
-      const { granted } = await Location.requestForegroundPermissionsAsync();
-      setLocationStatus(granted ? "granted" : "denied");
+      try {
+        const { granted } = await Location.requestForegroundPermissionsAsync();
+        setLocationStatus(granted ? "granted" : "denied");
+      } catch {
+        setLocationStatus("denied");
+      }
     } else if (id === "microphone") {
-      const { granted } = await Audio.requestPermissionsAsync();
-      setMicStatus(granted ? "granted" : "denied");
+      try {
+        const { granted } = await Audio.requestPermissionsAsync();
+        setMicStatus(granted ? "granted" : "denied");
+      } catch {
+        setMicStatus("denied");
+      }
     } else if (id === "notifications") {
       if (Platform.OS !== "web") {
         try {
