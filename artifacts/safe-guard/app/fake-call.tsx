@@ -340,7 +340,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   backBtn: {
-    alignSelf: "flex-end",
     width: 36,
     height: 36,
     borderRadius: 18,
