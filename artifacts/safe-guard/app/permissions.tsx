@@ -1,6 +1,9 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Audio } from "expo-av";
+import { Camera } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { Accelerometer } from "expo-sensors";
 import React, { useEffect, useState } from "react";
@@ -58,49 +61,42 @@ export default function PermissionsScreen() {
   };
 
   const checkAll = async () => {
-    // Wraps a permission check with both error catching AND a hard timeout.
-    // If the native API hangs or the module isn't available, we fall back
-    // after 2 s instead of blocking forever.
-    const safeCheck = <T,>(fn: () => Promise<T>, fallback: T): Promise<T> =>
+    // Race each check against a 2-second timeout so a hanging native API
+    // never blocks the screen from rendering.
+    const safe = <T,>(fn: () => Promise<T>, fallback: T): Promise<T> =>
       Promise.race([
         fn().catch(() => fallback),
-        new Promise<T>((resolve) => setTimeout(() => resolve(fallback), 2000)),
+        new Promise<T>((r) => setTimeout(() => r(fallback), 2000)),
       ]);
 
-    const fallbackPerm = { granted: false, status: "undetermined" as const };
+    const fallback = { granted: false, status: "undetermined" as const };
 
     const [loc, mic, motion] = await Promise.all([
-      safeCheck(() => Location.getForegroundPermissionsAsync(), fallbackPerm),
-      // Use dynamic import for expo-av so a missing/broken module never crashes the screen
-      safeCheck(async () => {
-        if (Platform.OS === "web") return fallbackPerm;
-        const { Audio } = await import("expo-av");
+      safe(() => Location.getForegroundPermissionsAsync(), fallback),
+      safe(async () => {
+        if (Platform.OS === "web") return fallback;
         return Audio.getPermissionsAsync();
-      }, fallbackPerm),
-      safeCheck(() => checkMotionStatus(), "undetermined" as PermissionStatus),
+      }, fallback),
+      safe(() => checkMotionStatus(), "undetermined" as PermissionStatus),
     ]);
 
     setLocationStatus(loc.granted ? "granted" : loc.status === "denied" ? "denied" : "undetermined");
     setMicStatus(mic.granted ? "granted" : mic.status === "denied" ? "denied" : "undetermined");
     setMotionStatus(motion);
 
-    // Camera — dynamic import to avoid crashing when expo-camera has a version mismatch
-    safeCheck(async () => {
-      const Camera = await import("expo-camera");
-      const result = await Camera.Camera.getCameraPermissionsAsync();
+    safe(async () => {
+      const result = await Camera.getCameraPermissionsAsync();
       setCameraStatus(result.granted ? "granted" : result.status === "denied" ? "denied" : "undetermined");
       setCameraCanAskAgain(result.canAskAgain ?? true);
       return result;
-    }, fallbackPerm).catch(() => {});
+    }, fallback).catch(() => {});
 
-    // Notifications — iOS/Android only
     if (Platform.OS !== "web") {
-      safeCheck(async () => {
-        const Notifications = await import("expo-notifications");
+      safe(async () => {
         const result = await Notifications.getPermissionsAsync();
         setNotifStatus(result.granted ? "granted" : result.status === "denied" ? "denied" : "undetermined");
         return result;
-      }, fallbackPerm).catch(() => {});
+      }, fallback).catch(() => {});
     }
   };
 
@@ -171,7 +167,6 @@ export default function PermissionsScreen() {
       }
     } else if (id === "microphone") {
       try {
-        const { Audio } = await import("expo-av");
         const { granted } = await Audio.requestPermissionsAsync();
         setMicStatus(granted ? "granted" : "denied");
       } catch {
@@ -180,7 +175,6 @@ export default function PermissionsScreen() {
     } else if (id === "notifications") {
       if (Platform.OS !== "web") {
         try {
-          const Notifications = await import("expo-notifications");
           const { granted } = await Notifications.requestPermissionsAsync();
           setNotifStatus(granted ? "granted" : "denied");
         } catch {
@@ -192,8 +186,7 @@ export default function PermissionsScreen() {
         if (!cameraCanAskAgain) {
           Linking.openSettings();
         } else {
-          const Camera = await import("expo-camera");
-          const result = await Camera.Camera.requestCameraPermissionsAsync();
+          const result = await Camera.requestCameraPermissionsAsync();
           setCameraStatus(result.granted ? "granted" : "denied");
           setCameraCanAskAgain(result.canAskAgain ?? false);
         }
