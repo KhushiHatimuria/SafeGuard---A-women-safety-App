@@ -125,6 +125,10 @@ export default function SOSActiveScreen() {
     router.replace("/(tabs)");
   };
 
+  const handleRecordVideo = () => {
+    router.push("/video-recorder" as any);
+  };
+
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],
   }));
@@ -263,8 +267,14 @@ export default function SOSActiveScreen() {
         )}
       </ScrollView>
 
-      {/* Fixed deactivate footer — always visible, never scrolls away */}
+      {/* Fixed footer — always visible */}
       <View style={[styles.fixedFooter, { paddingBottom: bottomPad }]}>
+        {/* Record Video button */}
+        <Pressable style={styles.recordBtn} onPress={handleRecordVideo}>
+          <Feather name="camera" size={18} color={COLORS.primary} />
+          <Text style={styles.recordBtnText}>Record Video Evidence</Text>
+        </Pressable>
+
         <Pressable
           style={[styles.deactivateBtn, deactivating && styles.deactivateBtnDisabled]}
           onPress={handleDeactivate}
@@ -394,8 +404,26 @@ const styles = StyleSheet.create({
     borderTopColor: "#1A0000",
     paddingHorizontal: 24,
     paddingTop: 16,
-    gap: 8,
+    gap: 10,
     alignItems: "center",
+  },
+  recordBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.primary + "15",
+    borderWidth: 1,
+    borderColor: COLORS.primary + "50",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    gap: 8,
+    width: "100%",
+  },
+  recordBtnText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: COLORS.primary,
   },
   deactivateBtn: {
     flexDirection: "row",

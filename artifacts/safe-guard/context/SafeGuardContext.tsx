@@ -59,6 +59,7 @@ type SafeGuardContextType = {
   voiceListening: boolean;
   lastDetection: { type: string; keywords: string[]; confidence: number } | null;
   isLoadingContacts: boolean;
+  wsRef: React.RefObject<WebSocket | null>;
   addContact: (contact: Omit<Contact, "id">) => Promise<void>;
   updateContact: (id: string, contact: Partial<Contact>) => Promise<void>;
   removeContact: (id: string) => Promise<void>;
@@ -110,8 +111,8 @@ const MOTION_THRESHOLD: Record<string, number> = {
   high: 2.0,
 };
 
-const VOICE_CLIP_DURATION = 5000; // 5 seconds
-const VOICE_LOOP_INTERVAL = 8000; // 8 seconds between checks
+const VOICE_CLIP_DURATION = 5000;
+const VOICE_LOOP_INTERVAL = 8000;
 
 export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -140,6 +141,7 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
   const sosStateRef = useRef<SOSState>("idle");
   const monitoringRef = useRef<MonitoringSchedule>(DEFAULT_MONITORING);
   const isMonitoringActiveRef = useRef(false);
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Keep refs in sync so closures have fresh values
   useEffect(() => { sosStateRef.current = sosState; }, [sosState]);
@@ -150,6 +152,47 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
     loadLocalData();
     loadRemoteData();
   }, []);
+
+  // ── Monitoring schedule enforcement ──────────────────────────────────────
+  useEffect(() => {
+    if (!monitoring.enabled) {
+      setIsMonitoringActive(false);
+      return;
+    }
+
+    const checkSchedule = () => {
+      if (monitoring.alwaysOn) {
+        setIsMonitoringActive(true);
+        return;
+      }
+
+      const now = new Date();
+      const currentMins = now.getHours() * 60 + now.getMinutes();
+      const startMins = monitoring.startHour * 60 + monitoring.startMinute;
+      const endMins = monitoring.endHour * 60 + monitoring.endMinute;
+
+      let inWindow: boolean;
+      if (startMins <= endMins) {
+        // Same-day window (e.g. 08:00–18:00)
+        inWindow = currentMins >= startMins && currentMins < endMins;
+      } else {
+        // Overnight window (e.g. 22:00–06:00)
+        inWindow = currentMins >= startMins || currentMins < endMins;
+      }
+      setIsMonitoringActive(inWindow);
+    };
+
+    checkSchedule();
+    const interval = setInterval(checkSchedule, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [
+    monitoring.enabled,
+    monitoring.alwaysOn,
+    monitoring.startHour,
+    monitoring.startMinute,
+    monitoring.endHour,
+    monitoring.endMinute,
+  ]);
 
   // Start/stop accelerometer based on monitoring state
   useEffect(() => {
@@ -173,20 +216,16 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
 
   const loadLocalData = async () => {
     try {
-      const [monitoringData, alertCountData] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.monitoring),
-        AsyncStorage.getItem(STORAGE_KEYS.alertCount),
-      ]);
+      const monitoringData = await AsyncStorage.getItem(STORAGE_KEYS.monitoring);
       if (monitoringData) {
         const parsed = JSON.parse(monitoringData);
         setMonitoring({ ...DEFAULT_MONITORING, ...parsed });
       }
-      if (alertCountData) setAlertCount(parseInt(alertCountData, 10));
     } catch {}
   };
 
   const loadRemoteData = async () => {
-    await Promise.all([reloadContacts(), reloadProfile()]);
+    await Promise.all([reloadContacts(), reloadProfile(), reloadAlertCount()]);
   };
 
   const reloadContacts = async () => {
@@ -220,12 +259,27 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   };
 
+  const reloadAlertCount = async () => {
+    try {
+      const alerts = await api.alerts.list();
+      const count = alerts.length;
+      setAlertCount(count);
+      AsyncStorage.setItem(STORAGE_KEYS.alertCount, String(count));
+    } catch {
+      // Fall back to cached value
+      try {
+        const cached = await AsyncStorage.getItem(STORAGE_KEYS.alertCount);
+        if (cached) setAlertCount(parseInt(cached, 10));
+      } catch {}
+    }
+  };
+
   // ── Accelerometer motion detection ────────────────────────────────────────
   const startAccelerometer = async () => {
     try {
       const { status } = await Accelerometer.requestPermissionsAsync();
       if (status !== "granted") return;
-      Accelerometer.setUpdateInterval(300);
+      Accelerometer.setUpdateInterval(200);
       accelSubscriptionRef.current = Accelerometer.addListener(({ x, y, z }) => {
         const mag = Math.sqrt(x * x + y * y + z * z);
         motionWindowRef.current.push(mag);
@@ -239,7 +293,10 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
           motionCooldownRef.current = true;
           setMotionAlert(true);
           if (monitoringRef.current.vibrateOnDetect) Vibration.vibrate([0, 100, 50, 100]);
-          setTimeout(() => { motionCooldownRef.current = false; }, 15000);
+          if (monitoringRef.current.autoEscalate && sosStateRef.current === "idle") {
+            triggerSOS("motion");
+          }
+          setTimeout(() => { motionCooldownRef.current = false; }, 10000);
         }
       });
     } catch {}
@@ -300,8 +357,8 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
       await recording.prepareToRecordAsync({
         android: {
           extension: ".m4a",
-          outputFormat: 2, // MPEG_4
-          audioEncoder: 3, // AAC
+          outputFormat: 2,
+          audioEncoder: 3,
           sampleRate: 44100,
           numberOfChannels: 1,
           bitRate: 64000,
@@ -331,12 +388,10 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
 
       if (!uri || sosStateRef.current !== "idle") return;
 
-      // Read as base64
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: "base64" as any,
       });
 
-      // Send to Gemini for classification
       const result = await api.classify.audio({
         audioBase64: base64,
         mimeType: "audio/mp4",
@@ -356,7 +411,6 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Clean up the temp file
       try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
     } catch {
       setVoiceListening(false);
@@ -377,11 +431,6 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
   const confirmSOSInternal = async (triggerType: TriggerType) => {
     if (verifyTimeoutRef.current) clearTimeout(verifyTimeoutRef.current);
     setSosState("active");
-    setAlertCount((prev) => {
-      const next = prev + 1;
-      AsyncStorage.setItem(STORAGE_KEYS.alertCount, String(next));
-      return next;
-    });
     if (Platform.OS !== "web") Vibration.vibrate([0, 500, 200, 500, 200, 500]);
     try {
       const alert = await api.alerts.create({
@@ -390,10 +439,12 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
         audioRecorded: false,
       });
       setActiveAlertId(alert.id);
-      // Update with contact count
-      api.alerts
-        .update(alert.id, {})
-        .catch(() => {});
+      // Update local alert count
+      setAlertCount((prev) => {
+        const next = prev + 1;
+        AsyncStorage.setItem(STORAGE_KEYS.alertCount, String(next));
+        return next;
+      });
     } catch {}
   };
 
@@ -482,7 +533,11 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleMonitoring = useCallback(() => {
-    setIsMonitoringActive((prev) => !prev);
+    setMonitoring((prev) => {
+      const updated = { ...prev, enabled: !prev.enabled };
+      AsyncStorage.setItem(STORAGE_KEYS.monitoring, JSON.stringify(updated));
+      return updated;
+    });
   }, []);
 
   return (
@@ -499,6 +554,7 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
         voiceListening,
         lastDetection,
         isLoadingContacts,
+        wsRef,
         addContact,
         updateContact,
         removeContact,

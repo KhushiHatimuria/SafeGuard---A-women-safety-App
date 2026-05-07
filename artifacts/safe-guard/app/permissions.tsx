@@ -1,4 +1,5 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { router } from "expo-router";
@@ -29,18 +30,33 @@ type PermissionItem = {
 
 export default function PermissionsScreen() {
   const insets = useSafeAreaInsets();
-  const [locationStatus, setLocationStatus] =
-    useState<PermissionStatus>("undetermined");
-  const [notifStatus, setNotifStatus] =
-    useState<PermissionStatus>("undetermined");
+  const [locationStatus, setLocationStatus] = useState<PermissionStatus>("undetermined");
+  const [micStatus, setMicStatus] = useState<PermissionStatus>("undetermined");
+  const [notifStatus, setNotifStatus] = useState<PermissionStatus>("undetermined");
 
   useEffect(() => {
     checkAll();
   }, []);
 
   const checkAll = async () => {
-    const loc = await Location.getForegroundPermissionsAsync();
-    setLocationStatus(loc.granted ? "granted" : loc.status as any);
+    const [loc, mic] = await Promise.all([
+      Location.getForegroundPermissionsAsync(),
+      Audio.getPermissionsAsync(),
+    ]);
+    setLocationStatus(loc.granted ? "granted" : (loc.status as PermissionStatus));
+    setMicStatus(mic.granted ? "granted" : (mic.status as PermissionStatus));
+
+    // Check notification permission — available on iOS/Android via expo-notifications
+    // gracefully skip on web or if not installed
+    if (Platform.OS !== "web") {
+      try {
+        const Notifications = await import("expo-notifications");
+        const notif = await Notifications.getPermissionsAsync();
+        setNotifStatus(notif.granted ? "granted" : (notif.status as PermissionStatus));
+      } catch {
+        setNotifStatus("undetermined");
+      }
+    }
   };
 
   const permissions: PermissionItem[] = [
@@ -55,6 +71,16 @@ export default function PermissionsScreen() {
       required: true,
     },
     {
+      id: "microphone",
+      title: "Microphone",
+      description:
+        "Used for audio distress detection (keyword spotting) and silent audio evidence recording during SOS.",
+      icon: "mic",
+      iconColor: "#9C27B0",
+      status: micStatus,
+      required: false,
+    },
+    {
       id: "notifications",
       title: "Notifications",
       description:
@@ -62,16 +88,6 @@ export default function PermissionsScreen() {
       icon: "bell",
       iconColor: COLORS.primary,
       status: notifStatus,
-      required: false,
-    },
-    {
-      id: "microphone",
-      title: "Microphone",
-      description:
-        "Used for audio distress detection (keyword spotting) and silent audio evidence recording during SOS.",
-      icon: "mic",
-      iconColor: "#9C27B0",
-      status: "undetermined",
       required: false,
     },
     {
@@ -104,8 +120,19 @@ export default function PermissionsScreen() {
     if (id === "location") {
       const { granted } = await Location.requestForegroundPermissionsAsync();
       setLocationStatus(granted ? "granted" : "denied");
+    } else if (id === "microphone") {
+      const { granted } = await Audio.requestPermissionsAsync();
+      setMicStatus(granted ? "granted" : "denied");
     } else if (id === "notifications") {
-      setNotifStatus("granted");
+      if (Platform.OS !== "web") {
+        try {
+          const Notifications = await import("expo-notifications");
+          const { granted } = await Notifications.requestPermissionsAsync();
+          setNotifStatus(granted ? "granted" : "denied");
+        } catch {
+          setNotifStatus("denied");
+        }
+      }
     }
   };
 

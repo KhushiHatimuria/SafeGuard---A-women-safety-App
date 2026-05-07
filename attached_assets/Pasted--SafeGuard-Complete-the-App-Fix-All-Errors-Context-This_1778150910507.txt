@@ -1,0 +1,148 @@
+# SafeGuard — Complete the App & Fix All Errors
+
+## Context
+This is a women's safety SOS app — a pnpm monorepo with:
+- `artifacts/safe-guard/` — Expo React Native mobile app
+- `artifacts/api-server/` — Express backend API
+- `lib/db/` — Drizzle ORM + PostgreSQL schema
+
+Read every file mentioned below before making changes. Do not skip any step.
+
+---
+
+## ERRORS TO FIX FIRST
+
+### Error 1 — `wsRef` does not exist in SafeGuardContext
+**File:** `artifacts/safe-guard/app/sos-active.tsx` line 41
+**Problem:** The screen destructures `wsRef` from `useSafeGuard()`, but `wsRef` is never defined or exported in `artifacts/safe-guard/context/SafeGuardContext.tsx`. This causes a TypeScript error and a runtime crash when the SOS Active screen loads.
+**Fix:** Add a `wsRef` using `useRef<WebSocket | null>(null)` inside `SafeGuardProvider` in `SafeGuardContext.tsx`, expose it in the context type as `wsRef: React.RefObject<WebSocket | null>`, and include it in the Provider value.
+
+### Error 2 — `cancelSOS` is in the type but not implemented
+**File:** `artifacts/safe-guard/context/SafeGuardContext.tsx`
+**Problem:** `cancelSOS: () => void` is declared in `SafeGuardContextType` but the actual implementation in the Provider value calls `triggerSOS: () => setSosState("verifying"), confirmSOS, deactivateSOS, toggleMonitoring, dismissMotionAlert, reloadContacts` — `cancelSOS` is never provided. This will throw at runtime.
+**Fix:** Add `cancelSOS: () => setSosState("idle")` inside the Provider value object.
+
+### Error 3 — `COLORS.cardBg` used in history.tsx but it's a duplicate of `bgCard`
+**File:** `artifacts/safe-guard/app/(tabs)/history.tsx`
+**Problem:** History screen uses `COLORS.cardBg` in StyleSheet (e.g. `refreshBtn`, `statCard`, `alertCard`, `retryBtn`). `COLORS.cardBg` does exist in `constants/colors.ts` as a duplicate of `bgCard` (both equal `"#1A1A1A"`), so this works but is inconsistent. Normalise history.tsx to use `COLORS.bgCard` everywhere for consistency with the rest of the app.
+
+### Error 4 — WebSocket server (`/audio` route) does not exist in api-server
+**File:** `artifacts/api-server/src/` — no WebSocket handler exists
+**Problem:** `artifacts/safe-guard/lib/notification-service.ts` connects to `ws://[BACKEND_IP]:9090/audio` via WebSocket and sends binary audio chunks + text commands (`SET_CONTACT:phone`, `SET_KEYWORD:word`). The api-server has NO WebSocket route. This means background monitoring silently fails — the WebSocket connection is refused immediately, the `onclose` fires, and reconnect loops forever.
+**Fix:** Add a WebSocket server to `artifacts/api-server/src/index.ts`. Use the `ws` npm package (add `ws` and `@types/ws` to api-server's `package.json`). Create `artifacts/api-server/src/routes/audio-ws.ts` that:
+- Upgrades HTTP connections at path `/audio` to WebSocket
+- Receives binary audio chunks from the phone
+- Receives text commands: `SET_CONTACT:<phone>` (store the guardian phone for this connection) and `SET_KEYWORD:<word>` (store custom distress keyword)
+- After receiving each audio chunk, sends the binary to `POST /api/classify/audio` (call the existing classify route internally using the Gemini AI integration)
+- If classification returns `triggerSOS: true`, sends back `EMERGENCY:high:Distress detected` text message to the phone
+- Sends `STATUS:Connected to SafeGuard backend` on open
+- Handles connection close and cleans up
+
+### Error 5 — `/gps` REST route does not exist in api-server
+**File:** `artifacts/safe-guard/lib/notification-service.ts` line 185
+**Problem:** `notification-service.ts` calls `POST http://[BACKEND]/api/gps` every 30 seconds to push GPS location. This route does not exist in the api-server. All GPS pings during monitoring fail silently.
+**Fix:** Add `POST /gps` route to `artifacts/api-server/src/routes/alerts.ts` (or a new `gps.ts` route file). It receives `{ latitude, longitude }` and can store it or log it. At minimum it must return `{ success: true }` with status 200 so the fetch doesn't throw.
+
+### Error 6 — Cloudinary upload preset is hardcoded as `ml_default` (unauthenticated)
+**File:** `artifacts/safe-guard/lib/cloudinary.ts`
+**Problem:** `upload_preset: "ml_default"` is Cloudinary's default unsigned preset. This will fail unless the Cloudinary account (`dfficsnj4`) has an unsigned upload preset named exactly `ml_default`. The video-recorder screen will silently fail on upload.
+**Fix:** Create a Replit Secret named `EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET` and `EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME`. Update `lib/cloudinary.ts` to read them:
+```ts
+const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dfficsnj4";
+const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "ml_default";
+```
+Then use `UPLOAD_PRESET` in the formData append.
+
+---
+
+## FEATURES TO COMPLETE
+
+### Feature 1 — SMS / Actual Emergency Notifications (MOST CRITICAL — core app function)
+**Current state:** When SOS is triggered, `confirmSOS()` in `SafeGuardContext.tsx` creates an alert record in the database and sets `contactsNotified: contacts.length` — but it NEVER actually sends a message to anyone. The contacts are just counted. No SMS, no WhatsApp, no call, no email is sent.
+**What to build:**
+1. Add Twilio to the api-server. Add `twilio` to `artifacts/api-server/package.json` dependencies.
+2. Create Replit Secrets: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`.
+3. Create `artifacts/api-server/src/lib/sms.ts` that exports a `sendSMS(to: string, body: string)` function using the Twilio SDK.
+4. In `artifacts/api-server/src/routes/alerts.ts`, in the `POST /alerts` handler, after inserting the alert into the database:
+   - Fetch all emergency contacts from the `contactsTable`
+   - For each contact, call `sendSMS(contact.phone, message)` where message is: `"🚨 EMERGENCY ALERT from [profile name]. She may be in danger. Last known location: https://maps.google.com/?q=[latitude],[longitude]. This is an automated message from SafeGuard."`
+   - If no location is available yet, omit the map link
+   - Update `contactsNotified` in the alert record to the actual count of contacts notified
+5. Also send an SMS in the `POST /alerts/:id/location` handler if the alert is active — send updated location to the primary contact.
+
+### Feature 2 — Monitoring schedule is saved locally but never enforced
+**File:** `artifacts/safe-guard/context/SafeGuardContext.tsx`
+**Current state:** `updateMonitoring` saves to AsyncStorage but the monitoring schedule (start hour, end hour, `alwaysOn`) is never checked before activating the audio stream. The `isMonitoringActive` toggle just toggles — it doesn't check if it's within the scheduled window.
+**What to build:** In `SafeGuardContext.tsx`, add a `useEffect` that runs every minute (use `setInterval`) when monitoring is enabled. Check if the current time is within `startHour`–`endHour` (accounting for overnight windows like 10 PM–6 AM). If `alwaysOn` is true, keep monitoring active regardless. If within window and `monitoring.enabled`, call `setIsMonitoringActive(true)`. If outside window, call `setIsMonitoringActive(false)`. Save monitoring settings to AsyncStorage whenever they change (they're currently only loaded, not saved on update — `updateMonitoring` is missing the `AsyncStorage.setItem` call).
+
+### Feature 3 — Motion detection is toggled but never actually implemented
+**File:** `artifacts/safe-guard/context/SafeGuardContext.tsx`
+**Current state:** `monitoring.motionDetection` is a boolean toggle in the UI but the Accelerometer subscription (`accelSubscriptionRef`) is referenced in the context but never actually started or used anywhere in the file.
+**What to build:** In the monitoring `useEffect` in `SafeGuardContext.tsx`, when `isMonitoringActive` becomes true and `monitoring.motionDetection` is true:
+- Subscribe to `Accelerometer.addListener` (already imported from `expo-sensors`)
+- Set `Accelerometer.setUpdateInterval(200)`
+- In the listener, calculate magnitude: `Math.sqrt(x*x + y*y + z*z)`
+- If magnitude > threshold based on sensitivity (`low: 2.5`, `medium: 1.8`, `high: 1.2`), trigger a motion alert
+- Debounce: don't fire again for 10 seconds after triggering
+- On trigger, call `setSosState("verifying")` and set `setMotionAlert(true)`
+- Store the subscription in `accelSubscriptionRef.current`
+- In the cleanup return of the useEffect, call `accelSubscriptionRef.current?.remove()` and set it to null
+
+### Feature 4 — Alert count is always 0
+**File:** `artifacts/safe-guard/context/SafeGuardContext.tsx`
+**Current state:** `alertCount` is initialized to `0` and never updated. The Profile screen and Home screen display it, always showing 0.
+**Fix:** In `loadRemoteData()`, after fetching contacts and profile, also call `api.alerts.list()` and set `setAlertCount(alerts.length)`. Also increment `alertCount` by 1 after a successful `confirmSOS()`.
+
+### Feature 5 — Video recorder screen is unreachable (no navigation to it)
+**File:** `artifacts/safe-guard/app/video-recorder.tsx` exists but no screen links to it
+**Current state:** The video recorder screen exists but there is no button, tab, or link anywhere in the app that navigates to it.
+**Fix:** Add a "Record Video" button to the SOS Active screen (`app/sos-active.tsx`). When an SOS is active, show a camera icon button that calls `router.push("/video-recorder")`. This allows the user to capture video evidence during an emergency.
+
+### Feature 6 — Permissions screen doesn't check microphone permission
+**File:** `artifacts/safe-guard/app/permissions.tsx`
+**Current state:** The permissions screen only checks location permission via `Location.getForegroundPermissionsAsync()`. It never checks microphone permission status. The microphone permission item shows `status: notifStatus` which is initialized to `"undetermined"` and never updated (there's no notification permission check either — the `checkAll` function only fetches location).
+**Fix:** In `checkAll()` in `permissions.tsx`:
+- Import `{ Audio }` from `expo-av`
+- Call `Audio.getPermissionsAsync()` and set a `micStatus` state from it
+- Use the Expo Notifications API (`expo-notifications`) to check notification permission status and set `notifStatus`
+- Wire the correct status to each permission item in the `permissions` array
+
+### Feature 7 — Monitoring settings are not persisted on change
+**File:** `artifacts/safe-guard/context/SafeGuardContext.tsx`
+**Current state:** `loadLocalData()` reads from AsyncStorage key `safeguard_monitoring_v2`, but `updateMonitoring` only calls `setMonitoring(p => ({...p, ...s}))` — it never writes back to AsyncStorage. So every time the app restarts, monitoring settings reset to defaults.
+**Fix:** In `updateMonitoring`, after calling `setMonitoring`, also call `AsyncStorage.setItem("safeguard_monitoring_v2", JSON.stringify({...currentMonitoring, ...s}))`. Use the functional updater pattern with a separate effect: add a `useEffect` that watches `monitoring` and writes it to AsyncStorage whenever it changes (skip the initial render with a `useRef` mounted flag).
+
+---
+
+## ENVIRONMENT VARIABLES NEEDED
+
+Add these as Replit Secrets (not in code files):
+
+| Secret Name | Where to get it |
+|---|---|
+| `DATABASE_URL` | Neon dashboard → Connection string |
+| `PORT` | Set to `9090` |
+| `AI_INTEGRATIONS_GEMINI_API_KEY` | https://aistudio.google.com |
+| `AI_INTEGRATIONS_GEMINI_BASE_URL` | Set to `https://generativelanguage.googleapis.com` |
+| `TWILIO_ACCOUNT_SID` | https://twilio.com → Console dashboard |
+| `TWILIO_AUTH_TOKEN` | https://twilio.com → Console dashboard |
+| `TWILIO_PHONE_NUMBER` | A Twilio number in E.164 format e.g. `+14155238886` |
+| `EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME` | https://cloudinary.com → Dashboard |
+| `EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET` | Cloudinary → Settings → Upload presets |
+
+---
+
+## SUMMARY — PRIORITY ORDER
+
+Fix in this exact order:
+1. Fix `cancelSOS` missing from Provider value (5 minute fix — app crashes without it)
+2. Fix `wsRef` not existing in context (app crashes on SOS Active screen)
+3. Add `/gps` REST route to api-server (stops 30-second error loops)
+4. Add WebSocket `/audio` server to api-server (enables background monitoring)
+5. Implement SMS notifications via Twilio in `POST /alerts` (core safety feature)
+6. Fix monitoring settings not being saved to AsyncStorage
+7. Implement motion detection with Accelerometer
+8. Fix alert count always being 0
+9. Fix permissions screen to check all permission types
+10. Add navigation to video recorder from SOS active screen
+11. Fix Cloudinary upload preset env var

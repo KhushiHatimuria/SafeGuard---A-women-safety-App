@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: COLORS.cardBg,
+    backgroundColor: COLORS.bgCard,
     borderWidth: 1,
     borderColor: COLORS.border,
     alignItems: "center",
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: COLORS.cardBg,
+    backgroundColor: COLORS.bgCard,
     borderRadius: 14,
     padding: 14,
     alignItems: "center",
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   alertCard: {
-    backgroundColor: COLORS.cardBg,
+    backgroundColor: COLORS.bgCard,
     borderRadius: 16,
     padding: 16,
     gap: 12,
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   },
   errorText: { fontSize: 14, fontFamily: "Inter_400Regular", color: COLORS.textSub, textAlign: "center" },
   retryBtn: {
-    backgroundColor: COLORS.cardBg,
+    backgroundColor: COLORS.bgCard,
     borderRadius: 10,
     paddingHorizontal: 20,
     paddingVertical: 8,
