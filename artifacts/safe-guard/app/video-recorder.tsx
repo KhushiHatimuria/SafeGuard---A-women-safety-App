@@ -46,17 +46,18 @@ export default function VideoRecorderScreen() {
   // Save video to library — handles Expo Go limitations gracefully
   const trySaveToLibrary = async (uri: string) => {
     try {
-      // Request permission at save-time (not on mount — avoids Expo Go crash)
-      const { status } = await MediaLibrary.requestPermissionsAsync(false);
+      // Request full write access (true = writeOnly is false, we need read+write)
+      const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync();
       if (status === "granted") {
         await MediaLibrary.saveToLibraryAsync(uri);
-        return true;
+        return "saved";
       }
+      if (!canAskAgain) return "settings";
     } catch (e: any) {
       // Expo Go on Android 13+ cannot access full media library — this is expected
       console.warn("[video] Could not save to library:", e?.message);
     }
-    return false;
+    return "failed";
   };
 
   const startRecording = useCallback(async () => {
@@ -78,14 +79,32 @@ export default function VideoRecorderScreen() {
 
       if (video?.uri) {
         if (Platform.OS !== "web") await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        const saved = await trySaveToLibrary(video.uri);
-        Alert.alert(
-          saved ? "Video Saved" : "Video Recorded",
-          saved
-            ? "Evidence video saved to your photo library."
-            : "Video recorded. To save permanently, grant Media Library access in device settings.",
-          [{ text: "OK", onPress: () => router.back() }]
-        );
+        const saveResult = await trySaveToLibrary(video.uri);
+        if (saveResult === "saved") {
+          Alert.alert(
+            "Video Saved",
+            "Evidence video saved permanently to your photo library.",
+            [{ text: "OK", onPress: () => router.back() }]
+          );
+        } else if (saveResult === "settings") {
+          Alert.alert(
+            "Permission Required",
+            "Media Library access was denied. Go to Settings → SafeGuard → Photos and enable access to save videos.",
+            [
+              { text: "Cancel", onPress: () => router.back() },
+              { text: "Open Settings", onPress: () => {
+                const { Linking } = require("react-native");
+                Linking.openSettings();
+              }},
+            ]
+          );
+        } else {
+          Alert.alert(
+            "Video Recorded",
+            "Recording complete. Grant Media Library access to save videos permanently to your device.",
+            [{ text: "OK", onPress: () => router.back() }]
+          );
+        }
       }
     } catch (e: any) {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }

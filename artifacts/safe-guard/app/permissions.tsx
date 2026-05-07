@@ -1,10 +1,12 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import { useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -33,6 +35,13 @@ export default function PermissionsScreen() {
   const [locationStatus, setLocationStatus] = useState<PermissionStatus>("undetermined");
   const [micStatus, setMicStatus] = useState<PermissionStatus>("undetermined");
   const [notifStatus, setNotifStatus] = useState<PermissionStatus>("undetermined");
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+
+  const cameraStatus: PermissionStatus = cameraPermission?.granted
+    ? "granted"
+    : cameraPermission?.status === "denied"
+    ? "denied"
+    : "undetermined";
 
   useEffect(() => {
     checkAll();
@@ -97,7 +106,7 @@ export default function PermissionsScreen() {
         "Attempts silent video recording during active emergency for evidence. Falls back gracefully if unavailable.",
       icon: "camera",
       iconColor: "#1565C0",
-      status: "undetermined",
+      status: cameraStatus,
       required: false,
     },
     {
@@ -132,6 +141,12 @@ export default function PermissionsScreen() {
         } catch {
           setNotifStatus("denied");
         }
+      }
+    } else if (id === "camera") {
+      if (cameraPermission?.canAskAgain === false) {
+        Linking.openSettings();
+      } else {
+        await requestCameraPermission();
       }
     }
   };
@@ -241,8 +256,14 @@ export default function PermissionsScreen() {
 
                 {perm.status !== "granted" && (
                   <Pressable
-                    style={styles.grantBtn}
-                    onPress={() => handleGrant(perm.id)}
+                    style={[styles.grantBtn, perm.status === "denied" && styles.grantBtnSettings]}
+                    onPress={() => {
+                      if (perm.status === "denied" && perm.id !== "camera") {
+                        Linking.openSettings();
+                      } else {
+                        handleGrant(perm.id);
+                      }
+                    }}
                   >
                     <Text style={styles.grantBtnText}>
                       {perm.status === "denied" ? "Open Settings" : "Grant"}
@@ -386,6 +407,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 10,
+  },
+  grantBtnSettings: {
+    backgroundColor: COLORS.bgCard,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   grantBtnText: {
     fontSize: 13,

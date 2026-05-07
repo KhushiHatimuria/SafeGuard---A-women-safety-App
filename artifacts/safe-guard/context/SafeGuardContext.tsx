@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Location from "expo-location";
 import * as SMS from "expo-sms";
 import { Accelerometer } from "expo-sensors";
@@ -584,8 +584,11 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleMonitoring = useCallback(() => {
+    // Toggling monitoring activates it immediately (alwaysOn) so the user sees
+    // instant feedback. Scheduled mode still limits active hours via the effect above.
     setMonitoring((prev) => {
-      const updated = { ...prev, enabled: !prev.enabled };
+      const nowEnabled = !prev.enabled;
+      const updated = { ...prev, enabled: nowEnabled, alwaysOn: nowEnabled ? true : prev.alwaysOn };
       AsyncStorage.setItem(STORAGE_KEYS.monitoring, JSON.stringify(updated));
       return updated;
     });

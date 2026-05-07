@@ -1,37 +1,48 @@
-// TextBelt — simple REST SMS API (no SDK required)
-// Free key "textbelt" = 1 SMS/day per IP (testing only)
-// Set TEXTBELT_API_KEY to a paid key for unlimited global SMS
-// Purchase at: https://textbelt.com
+// TextBee — open-source Android SMS gateway (https://textbee.dev)
+// Uses your own Android phone + SIM as the SMS sender. No per-message fees.
+//
+// Setup:
+//  1. Create account at https://app.textbee.dev
+//  2. Install the TextBee Android app and register your device
+//  3. Copy your API key and Device ID from the dashboard
+//  4. Set TEXTBEE_API_KEY and TEXTBEE_DEVICE_ID as environment secrets
 
-const TEXTBELT_KEY = process.env.TEXTBELT_API_KEY || "textbelt";
-const TEXTBELT_URL = "https://textbelt.com/text";
-
-function toE164(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (phone.startsWith("+")) return phone;
-  return `+${digits}`;
-}
+const TEXTBEE_API_KEY = process.env.TEXTBEE_API_KEY ?? "";
+const TEXTBEE_DEVICE_ID = process.env.TEXTBEE_DEVICE_ID ?? "";
+const TEXTBEE_URL = `https://api.textbee.dev/api/v1/gateway/devices/${TEXTBEE_DEVICE_ID}/send-sms`;
 
 export async function sendSMS(to: string, body: string): Promise<boolean> {
-  const normalized = toE164(to);
+  if (!TEXTBEE_API_KEY || !TEXTBEE_DEVICE_ID) {
+    console.warn("[sms] TEXTBEE_API_KEY or TEXTBEE_DEVICE_ID not set — skipping server-side SMS");
+    return false;
+  }
+
   try {
-    const res = await fetch(TEXTBELT_URL, {
+    const res = await fetch(TEXTBEE_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: normalized, message: body, key: TEXTBELT_KEY }),
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": TEXTBEE_API_KEY,
+      },
+      body: JSON.stringify({ receivers: [to], message: body }),
     });
-    const data = (await res.json()) as { success: boolean; error?: string; quotaRemaining?: number };
-    if (data.success) {
-      console.info(`[sms] TextBelt sent to ${normalized} — quota remaining: ${data.quotaRemaining}`);
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.error(`[sms] TextBee HTTP ${res.status}: ${text}`);
+      return false;
+    }
+
+    const data = (await res.json()) as { success?: boolean; message?: string };
+    if (data.success !== false) {
+      console.info(`[sms] TextBee sent to ${to}`);
       return true;
     } else {
-      console.error(`[sms] TextBelt failed for ${normalized}: ${data.error}`);
+      console.error(`[sms] TextBee failed: ${data.message}`);
       return false;
     }
   } catch (err: any) {
-    console.error(`[sms] TextBelt request error: ${err?.message ?? err}`);
+    console.error(`[sms] TextBee request error: ${err?.message ?? err}`);
     return false;
   }
 }
