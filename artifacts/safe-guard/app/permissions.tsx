@@ -65,17 +65,21 @@ export default function PermissionsScreen() {
   };
 
   const checkAll = async () => {
-    const safeCheck = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
-      try {
-        return await fn();
-      } catch {
-        return fallback;
-      }
-    };
+    // Wraps a permission check with both error catching AND a hard timeout.
+    // If the native API hangs forever (common on web/deployed), we fall back
+    // after 2 s instead of blocking forever.
+    const safeCheck = <T,>(fn: () => Promise<T>, fallback: T): Promise<T> =>
+      Promise.race([
+        fn().catch(() => fallback),
+        new Promise<T>((resolve) => setTimeout(() => resolve(fallback), 2000)),
+      ]);
 
     const [loc, mic, motion] = await Promise.all([
       safeCheck(() => Location.getForegroundPermissionsAsync(), { granted: false, status: "undetermined" as const }),
-      safeCheck(() => Audio.getPermissionsAsync(), { granted: false, status: "undetermined" as const }),
+      // expo-av Audio can hang on web — skip it there and default to undetermined
+      Platform.OS === "web"
+        ? Promise.resolve({ granted: false, status: "undetermined" as const })
+        : safeCheck(() => Audio.getPermissionsAsync(), { granted: false, status: "undetermined" as const }),
       safeCheck(() => checkMotionStatus(), "undetermined" as PermissionStatus),
     ]);
 
@@ -88,8 +92,13 @@ export default function PermissionsScreen() {
     if (Platform.OS !== "web") {
       try {
         const Notifications = await import("expo-notifications");
-        const notif = await Notifications.getPermissionsAsync();
-        setNotifStatus(notif.granted ? "granted" : (notif.status as PermissionStatus));
+        const notifResult = await Promise.race([
+          Notifications.getPermissionsAsync(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+        ]);
+        if (notifResult) {
+          setNotifStatus(notifResult.granted ? "granted" : (notifResult.status as PermissionStatus));
+        }
       } catch {
         setNotifStatus("undetermined");
       }
