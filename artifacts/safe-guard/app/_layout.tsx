@@ -52,13 +52,20 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
+  const [timedOut, setTimedOut] = React.useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setTimedOut(true), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
 
-  if (!fontsLoaded && !fontError) return null;
+  if (!fontsLoaded && !fontError && !timedOut) return null;
 
   return (
     <SafeAreaProvider>
