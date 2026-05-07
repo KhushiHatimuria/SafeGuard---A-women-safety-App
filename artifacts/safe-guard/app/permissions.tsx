@@ -1,14 +1,9 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
-import { Audio } from "expo-av";
-import { Camera } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
-import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
-import { Accelerometer } from "expo-sensors";
 import React, { useEffect, useState } from "react";
 import {
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -34,70 +29,18 @@ type PermissionItem = {
 
 export default function PermissionsScreen() {
   const insets = useSafeAreaInsets();
-  const [locationStatus, setLocationStatus] = useState<PermissionStatus>("undetermined");
-  const [micStatus, setMicStatus] = useState<PermissionStatus>("undetermined");
-  const [notifStatus, setNotifStatus] = useState<PermissionStatus>("undetermined");
-  const [motionStatus, setMotionStatus] = useState<PermissionStatus>("undetermined");
-  const [cameraStatus, setCameraStatus] = useState<PermissionStatus>("undetermined");
-  const [cameraCanAskAgain, setCameraCanAskAgain] = useState(true);
+  const [locationStatus, setLocationStatus] =
+    useState<PermissionStatus>("undetermined");
+  const [notifStatus, setNotifStatus] =
+    useState<PermissionStatus>("undetermined");
 
   useEffect(() => {
     checkAll();
   }, []);
 
-  const checkMotionStatus = async (): Promise<PermissionStatus> => {
-    try {
-      if (Platform.OS === "web") {
-        if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
-          return "undetermined";
-        }
-        return "granted";
-      }
-      const { status } = await Accelerometer.getPermissionsAsync();
-      return status === "granted" ? "granted" : status === "denied" ? "denied" : "undetermined";
-    } catch {
-      return "undetermined";
-    }
-  };
-
   const checkAll = async () => {
-    // Race each check against a 2-second timeout so a hanging native API
-    // never blocks the screen from rendering.
-    const safe = <T,>(fn: () => Promise<T>, fallback: T): Promise<T> =>
-      Promise.race([
-        fn().catch(() => fallback),
-        new Promise<T>((r) => setTimeout(() => r(fallback), 2000)),
-      ]);
-
-    const fallback = { granted: false, status: "undetermined" as const };
-
-    const [loc, mic, motion] = await Promise.all([
-      safe(() => Location.getForegroundPermissionsAsync(), fallback),
-      safe(async () => {
-        if (Platform.OS === "web") return fallback;
-        return Audio.getPermissionsAsync();
-      }, fallback),
-      safe(() => checkMotionStatus(), "undetermined" as PermissionStatus),
-    ]);
-
-    setLocationStatus(loc.granted ? "granted" : loc.status === "denied" ? "denied" : "undetermined");
-    setMicStatus(mic.granted ? "granted" : mic.status === "denied" ? "denied" : "undetermined");
-    setMotionStatus(motion);
-
-    safe(async () => {
-      const result = await Camera.getCameraPermissionsAsync();
-      setCameraStatus(result.granted ? "granted" : result.status === "denied" ? "denied" : "undetermined");
-      setCameraCanAskAgain(result.canAskAgain ?? true);
-      return result;
-    }, fallback).catch(() => {});
-
-    if (Platform.OS !== "web") {
-      safe(async () => {
-        const result = await Notifications.getPermissionsAsync();
-        setNotifStatus(result.granted ? "granted" : result.status === "denied" ? "denied" : "undetermined");
-        return result;
-      }, fallback).catch(() => {});
-    }
+    const loc = await Location.getForegroundPermissionsAsync();
+    setLocationStatus(loc.granted ? "granted" : loc.status as any);
   };
 
   const permissions: PermissionItem[] = [
@@ -112,16 +55,6 @@ export default function PermissionsScreen() {
       required: true,
     },
     {
-      id: "microphone",
-      title: "Microphone",
-      description:
-        "Used for audio distress detection (keyword spotting) and silent audio evidence recording during SOS.",
-      icon: "mic",
-      iconColor: "#9C27B0",
-      status: micStatus,
-      required: false,
-    },
-    {
       id: "notifications",
       title: "Notifications",
       description:
@@ -132,13 +65,23 @@ export default function PermissionsScreen() {
       required: false,
     },
     {
+      id: "microphone",
+      title: "Microphone",
+      description:
+        "Used for audio distress detection (keyword spotting) and silent audio evidence recording during SOS.",
+      icon: "mic",
+      iconColor: "#9C27B0",
+      status: "undetermined",
+      required: false,
+    },
+    {
       id: "camera",
       title: "Camera",
       description:
         "Attempts silent video recording during active emergency for evidence. Falls back gracefully if unavailable.",
       icon: "camera",
       iconColor: "#1565C0",
-      status: cameraStatus,
+      status: "undetermined",
       required: false,
     },
     {
@@ -148,67 +91,21 @@ export default function PermissionsScreen() {
         "Accelerometer data helps detect sudden falls or struggle patterns to trigger the verification phase.",
       icon: "activity",
       iconColor: COLORS.warning,
-      status: motionStatus,
+      status: "undetermined",
       required: false,
     },
   ];
 
   const handleGrant = async (id: string) => {
     if (Platform.OS !== "web") {
-      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
 
     if (id === "location") {
-      try {
-        const { granted } = await Location.requestForegroundPermissionsAsync();
-        setLocationStatus(granted ? "granted" : "denied");
-      } catch {
-        setLocationStatus("denied");
-      }
-    } else if (id === "microphone") {
-      try {
-        const { granted } = await Audio.requestPermissionsAsync();
-        setMicStatus(granted ? "granted" : "denied");
-      } catch {
-        setMicStatus("denied");
-      }
+      const { granted } = await Location.requestForegroundPermissionsAsync();
+      setLocationStatus(granted ? "granted" : "denied");
     } else if (id === "notifications") {
-      if (Platform.OS !== "web") {
-        try {
-          const { granted } = await Notifications.requestPermissionsAsync();
-          setNotifStatus(granted ? "granted" : "denied");
-        } catch {
-          setNotifStatus("denied");
-        }
-      }
-    } else if (id === "camera") {
-      try {
-        if (!cameraCanAskAgain) {
-          Linking.openSettings();
-        } else {
-          const result = await Camera.requestCameraPermissionsAsync();
-          setCameraStatus(result.granted ? "granted" : "denied");
-          setCameraCanAskAgain(result.canAskAgain ?? false);
-        }
-      } catch {
-        Linking.openSettings();
-      }
-    } else if (id === "motion") {
-      try {
-        if (Platform.OS === "web") {
-          if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
-            const result = await (DeviceMotionEvent as any).requestPermission();
-            setMotionStatus(result === "granted" ? "granted" : "denied");
-          } else {
-            setMotionStatus("granted");
-          }
-        } else {
-          const { status } = await Accelerometer.requestPermissionsAsync();
-          setMotionStatus(status === "granted" ? "granted" : "denied");
-        }
-      } catch {
-        setMotionStatus("denied");
-      }
+      setNotifStatus("granted");
     }
   };
 
@@ -317,14 +214,8 @@ export default function PermissionsScreen() {
 
                 {perm.status !== "granted" && (
                   <Pressable
-                    style={[styles.grantBtn, perm.status === "denied" && styles.grantBtnSettings]}
-                    onPress={() => {
-                      if (perm.status === "denied" && perm.id !== "camera") {
-                        Linking.openSettings();
-                      } else {
-                        handleGrant(perm.id);
-                      }
-                    }}
+                    style={styles.grantBtn}
+                    onPress={() => handleGrant(perm.id)}
                   >
                     <Text style={styles.grantBtnText}>
                       {perm.status === "denied" ? "Open Settings" : "Grant"}
@@ -468,11 +359,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 10,
-  },
-  grantBtnSettings: {
-    backgroundColor: COLORS.bgCard,
-    borderWidth: 1,
-    borderColor: COLORS.border,
   },
   grantBtnText: {
     fontSize: 13,
