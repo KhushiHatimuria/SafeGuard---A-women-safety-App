@@ -3,6 +3,8 @@ import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
   Platform,
   Pressable,
   RefreshControl,
@@ -109,9 +111,38 @@ function AlertCard({ alert }: { alert: ApiAlert }) {
             color={alert.audioRecorded ? COLORS.primary : COLORS.textMuted}
           />
           <Text style={[styles.statText, alert.audioRecorded && { color: COLORS.primary }]}>
-            {alert.audioRecorded ? "Audio recorded" : "No recording"}
+            {alert.audioRecorded ? "Audio recorded" : "No audio"}
           </Text>
         </View>
+        <Pressable
+          style={[styles.statChip, alert.videoRecorded && styles.videoChip]}
+          onPress={() => {
+            if (!alert.videoRecorded) return;
+            if (Platform.OS === "ios") {
+              Linking.openURL("photos-redirect://").catch(() =>
+                Alert.alert("Video Saved", "Your evidence video was saved to your Camera Roll.")
+              );
+            } else if (Platform.OS === "android") {
+              Linking.openURL("content://media/internal/images/media").catch(() =>
+                Alert.alert("Video Saved", "Your evidence video was saved to your Gallery.")
+              );
+            } else {
+              Alert.alert("Video Saved", "Your evidence video was saved to your device's photo library.");
+            }
+          }}
+        >
+          <MaterialCommunityIcons
+            name={alert.videoRecorded ? "video" : "video-off"}
+            size={11}
+            color={alert.videoRecorded ? "#22c55e" : COLORS.textMuted}
+          />
+          <Text style={[styles.statText, alert.videoRecorded && styles.videoChipText]}>
+            {alert.videoRecorded ? "View video" : "No video"}
+          </Text>
+          {alert.videoRecorded ? (
+            <Feather name="external-link" size={9} color="#22c55e" />
+          ) : null}
+        </Pressable>
         <View style={styles.statChip}>
           <MaterialCommunityIcons name="identifier" size={11} color={COLORS.textMuted} />
           <Text style={styles.statText}>{alert.id.slice(0, 8).toUpperCase()}</Text>
@@ -332,6 +363,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  videoChip: {
+    borderColor: "rgba(34,197,94,0.35)",
+    backgroundColor: "rgba(34,197,94,0.06)",
+  },
+  videoChipText: {
+    color: "#22c55e",
   },
   statText: {
     fontSize: 11,

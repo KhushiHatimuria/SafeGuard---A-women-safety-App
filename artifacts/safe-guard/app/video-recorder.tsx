@@ -12,6 +12,9 @@ import {
   Text,
   View,
 } from "react-native";
+
+import { useSafeGuard } from "@/context/SafeGuardContext";
+import { api } from "@/lib/api";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -24,6 +27,7 @@ import { COLORS } from "@/constants/colors";
 
 export default function VideoRecorderScreen() {
   const insets = useSafeAreaInsets();
+  const { activeAlertId } = useSafeGuard();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
   const [isRecording, setIsRecording] = useState(false);
@@ -81,6 +85,9 @@ export default function VideoRecorderScreen() {
         if (Platform.OS !== "web") await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         const saveResult = await trySaveToLibrary(video.uri);
         if (saveResult === "saved") {
+          if (activeAlertId) {
+            api.alerts.markVideoRecorded(activeAlertId).catch(() => {});
+          }
           Alert.alert(
             "Video Saved",
             "Evidence video saved permanently to your photo library.",

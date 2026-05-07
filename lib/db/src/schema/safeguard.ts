@@ -38,6 +38,7 @@ export const alertsTable = pgTable("sos_alerts", {
   accuracy: real("accuracy"),
   contactsNotified: integer("contacts_notified").notNull().default(0),
   audioRecorded: boolean("audio_recorded").notNull().default(false),
+  videoRecorded: boolean("video_recorded").notNull().default(false),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),

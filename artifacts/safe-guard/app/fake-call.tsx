@@ -20,6 +20,13 @@ const FAKE_CALLER = {
   number: "+1 (555) 847-2031",
 };
 
+const DELAY_OPTIONS: { label: string; seconds: number }[] = [
+  { label: "Now", seconds: 0 },
+  { label: "1 min", seconds: 60 },
+  { label: "2 min", seconds: 120 },
+  { label: "5 min", seconds: 300 },
+];
+
 const CONVERSATION: { text: string; delay: number }[] = [
   { text: "Hey, where are you? I'm waiting downstairs.", delay: 500 },
   { text: "Hello? Can you hear me?", delay: 5500 },
@@ -34,20 +41,27 @@ const CONVERSATION: { text: string; delay: number }[] = [
   },
 ];
 
-type CallState = "ringing" | "active";
+type CallState = "scheduling" | "countdown" | "ringing" | "active";
 
 export default function FakeCallScreen() {
   const insets = useSafeAreaInsets();
-  const [callState, setCallState] = useState<CallState>("ringing");
+  const [callState, setCallState] = useState<CallState>("scheduling");
+  const [selectedDelay, setSelectedDelay] = useState<number | null>(null);
+  const [countdown, setCountdown] = useState(0);
   const [duration, setDuration] = useState(0);
+
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const callTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const speechTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const vibIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
+  const startRinging = useCallback(() => {
+    setCallState("ringing");
+
     const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -92,17 +106,47 @@ export default function FakeCallScreen() {
         Vibration.vibrate(600);
       }, 2500);
     }
+  }, [pulseAnim, ripple1, ripple2]);
 
+  const scheduleCall = useCallback(
+    (delaySecs: number) => {
+      setSelectedDelay(delaySecs);
+      if (Platform.OS !== "web") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+      if (delaySecs === 0) {
+        startRinging();
+      } else {
+        setCountdown(delaySecs);
+        setCallState("countdown");
+      }
+    },
+    [startRinging]
+  );
+
+  useEffect(() => {
+    if (callState !== "countdown") return;
+    countdownRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdownRef.current!);
+          startRinging();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
     return () => {
-      pulse.stop();
-      if (vibIntervalRef.current) clearInterval(vibIntervalRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, []);
+  }, [callState, startRinging]);
 
   const endCall = useCallback(() => {
     Speech.stop();
     Vibration.cancel();
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (callTimerRef.current) clearInterval(callTimerRef.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (vibIntervalRef.current) clearInterval(vibIntervalRef.current);
     speechTimersRef.current.forEach(clearTimeout);
     router.back();
   }, []);
@@ -117,31 +161,36 @@ export default function FakeCallScreen() {
 
     CONVERSATION.forEach(({ text, delay }) => {
       const t = setTimeout(() => {
-        Speech.speak(text, {
-          language: "en-US",
-          pitch: 0.72,
-          rate: 0.88,
-        });
+        Speech.speak(text, { language: "en-US", pitch: 0.72, rate: 0.88 });
       }, delay);
       speechTimersRef.current.push(t);
     });
 
-    timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+    callTimerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
   }, []);
 
   useEffect(() => {
     return () => {
       Speech.stop();
       Vibration.cancel();
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      if (vibIntervalRef.current) clearInterval(vibIntervalRef.current);
       speechTimersRef.current.forEach(clearTimeout);
     };
   }, []);
 
   const fmt = (s: number) =>
-    `${Math.floor(s / 60)
+    `${Math.floor(s / 60).toString().padStart(2, "0")}:${(s % 60)
       .toString()
-      .padStart(2, "0")}:${(s % 60).toString().padStart(2, "0")}`;
+      .padStart(2, "0")}`;
+
+  const fmtCountdown = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    if (m > 0) return `${m}:${sec.toString().padStart(2, "0")}`;
+    return `${sec}s`;
+  };
 
   const rippleStyle = (anim: Animated.Value) => ({
     opacity: anim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.5, 0.25, 0] }),
@@ -150,6 +199,64 @@ export default function FakeCallScreen() {
 
   const topPad = insets.top + (Platform.OS === "web" ? 80 : 40);
   const botPad = insets.bottom + (Platform.OS === "web" ? 40 : 24);
+
+  if (callState === "scheduling") {
+    return (
+      <View style={[styles.container, { paddingTop: topPad, paddingBottom: botPad }]}>
+        <View style={styles.scheduleHeader}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <Feather name="x" size={20} color="rgba(255,255,255,0.6)" />
+          </Pressable>
+          <MaterialCommunityIcons name="phone-incoming" size={52} color="#22c55e" />
+          <Text style={styles.scheduleTitle}>Schedule Fake Call</Text>
+          <Text style={styles.scheduleSubtitle}>
+            "Dad" will call you after the selected delay — put your phone away and act natural
+          </Text>
+        </View>
+
+        <View style={styles.delayGrid}>
+          {DELAY_OPTIONS.map(({ label, seconds }) => (
+            <Pressable
+              key={label}
+              style={styles.delayCard}
+              onPress={() => scheduleCall(seconds)}
+            >
+              <Text style={styles.delayLabel}>{label}</Text>
+              {seconds > 0 && (
+                <Text style={styles.delayHint}>Ring in {label}</Text>
+              )}
+              {seconds === 0 && (
+                <Text style={styles.delayHint}>Ring immediately</Text>
+              )}
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.scheduleFooter}>
+          <MaterialCommunityIcons name="shield-check" size={14} color="rgba(255,255,255,0.3)" />
+          <Text style={styles.footerText}>
+            Audio plays in a deep male voice to deter attackers
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (callState === "countdown") {
+    return (
+      <View style={[styles.container, styles.countdownContainer, { paddingTop: topPad, paddingBottom: botPad }]}>
+        <View style={styles.countdownInner}>
+          <Text style={styles.countdownLabel}>Call ringing in</Text>
+          <Text style={styles.countdownNumber}>{fmtCountdown(countdown)}</Text>
+          <Text style={styles.countdownSub}>Put your phone away and act natural</Text>
+        </View>
+        <Pressable style={styles.cancelCountdownBtn} onPress={endCall}>
+          <Feather name="x" size={16} color="rgba(255,255,255,0.6)" />
+          <Text style={styles.cancelCountdownText}>Cancel</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: topPad, paddingBottom: botPad }]}>
@@ -193,19 +300,13 @@ export default function FakeCallScreen() {
         {callState === "ringing" ? (
           <>
             <View style={styles.actionItem}>
-              <Pressable
-                style={[styles.actionBtn, styles.declineBtn]}
-                onPress={endCall}
-              >
+              <Pressable style={[styles.actionBtn, styles.declineBtn]} onPress={endCall}>
                 <Feather name="phone-off" size={30} color="#fff" />
               </Pressable>
               <Text style={styles.actionLabel}>Decline</Text>
             </View>
             <View style={styles.actionItem}>
-              <Pressable
-                style={[styles.actionBtn, styles.acceptBtn]}
-                onPress={answerCall}
-              >
+              <Pressable style={[styles.actionBtn, styles.acceptBtn]} onPress={answerCall}>
                 <Feather name="phone" size={30} color="#fff" />
               </Pressable>
               <Text style={styles.actionLabel}>Accept</Text>
@@ -213,10 +314,7 @@ export default function FakeCallScreen() {
           </>
         ) : (
           <View style={styles.actionItem}>
-            <Pressable
-              style={[styles.actionBtn, styles.declineBtn]}
-              onPress={endCall}
-            >
+            <Pressable style={[styles.actionBtn, styles.declineBtn]} onPress={endCall}>
               <Feather name="phone-off" size={30} color="#fff" />
             </Pressable>
             <Text style={styles.actionLabel}>End Call</Text>
@@ -234,6 +332,120 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 32,
+  },
+  scheduleHeader: {
+    alignItems: "center",
+    gap: 14,
+    paddingTop: 16,
+    paddingHorizontal: 8,
+  },
+  backBtn: {
+    alignSelf: "flex-end",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+    alignSelf: "flex-start",
+  },
+  scheduleTitle: {
+    fontSize: 26,
+    fontFamily: "Inter_700Bold",
+    color: "#fff",
+    textAlign: "center",
+  },
+  scheduleSubtitle: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(255,255,255,0.45)",
+    textAlign: "center",
+    lineHeight: 20,
+    paddingHorizontal: 8,
+  },
+  delayGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    justifyContent: "center",
+    width: "100%",
+  },
+  delayCard: {
+    width: "46%",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 18,
+    paddingVertical: 22,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: "rgba(34,197,94,0.25)",
+  },
+  delayLabel: {
+    fontSize: 24,
+    fontFamily: "Inter_700Bold",
+    color: "#22c55e",
+  },
+  delayHint: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(255,255,255,0.4)",
+  },
+  scheduleFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingBottom: 8,
+  },
+  footerText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(255,255,255,0.3)",
+    flex: 1,
+  },
+  countdownContainer: {
+    justifyContent: "center",
+    gap: 40,
+  },
+  countdownInner: {
+    alignItems: "center",
+    gap: 12,
+  },
+  countdownLabel: {
+    fontSize: 16,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(255,255,255,0.45)",
+    letterSpacing: 0.5,
+  },
+  countdownNumber: {
+    fontSize: 88,
+    fontFamily: "Inter_700Bold",
+    color: "#22c55e",
+    lineHeight: 96,
+    letterSpacing: -2,
+  },
+  countdownSub: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(255,255,255,0.35)",
+    textAlign: "center",
+    paddingHorizontal: 24,
+  },
+  cancelCountdownBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  cancelCountdownText: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    color: "rgba(255,255,255,0.5)",
   },
   callerSection: {
     alignItems: "center",

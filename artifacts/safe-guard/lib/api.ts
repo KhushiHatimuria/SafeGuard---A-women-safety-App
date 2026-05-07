@@ -55,6 +55,7 @@ export type ApiAlert = {
   accuracy?: number;
   contactsNotified: number;
   audioRecorded: boolean;
+  videoRecorded: boolean;
   notes?: string;
   createdAt: string;
   resolvedAt?: string;
@@ -105,8 +106,10 @@ export const api = {
       audioRecorded: boolean;
       notes?: string;
     }) => request<ApiAlert>("/alerts", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: { status?: "active" | "resolved" | "cancelled"; notes?: string }) =>
+    update: (id: string, data: { status?: "active" | "resolved" | "cancelled"; notes?: string; videoRecorded?: boolean }) =>
       request<ApiAlert>(`/alerts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    markVideoRecorded: (id: string) =>
+      request<ApiAlert>(`/alerts/${id}`, { method: "PATCH", body: JSON.stringify({ videoRecorded: true }) }),
     pushLocation: (id: string, data: { latitude: number; longitude: number; accuracy?: number }) =>
       request<{ success: boolean }>(`/alerts/${id}/location`, {
         method: "POST",

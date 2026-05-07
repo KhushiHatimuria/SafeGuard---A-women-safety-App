@@ -17,6 +17,7 @@ function mapAlert(a: typeof alertsTable.$inferSelect) {
     accuracy: a.accuracy,
     contactsNotified: a.contactsNotified,
     audioRecorded: a.audioRecorded,
+    videoRecorded: a.videoRecorded,
     notes: a.notes,
     createdAt: a.createdAt.toISOString(),
     resolvedAt: a.resolvedAt?.toISOString() ?? null,
@@ -96,10 +97,11 @@ router.post("/alerts", async (req, res) => {
 router.patch("/alerts/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, notes } = req.body;
+    const { status, notes, videoRecorded } = req.body;
     const updateData: Partial<typeof alertsTable.$inferInsert> = {};
     if (status) updateData.status = status;
     if (notes !== undefined) updateData.notes = notes;
+    if (videoRecorded !== undefined) updateData.videoRecorded = videoRecorded;
     if (status === "resolved" || status === "cancelled") {
       updateData.resolvedAt = new Date();
     }
