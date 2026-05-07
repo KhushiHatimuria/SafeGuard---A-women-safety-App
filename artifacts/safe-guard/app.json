@@ -15,15 +15,23 @@
     },
     "ios": {
       "supportsTablet": false,
+      "bundleIdentifier": "com.safeguard.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "SafeGuard needs location to send your GPS coordinates in emergency alerts.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeGuard uses background location to continuously update your position during an active emergency.",
         "NSMicrophoneUsageDescription": "SafeGuard listens for distress keywords and records audio evidence during emergencies.",
         "NSCameraUsageDescription": "SafeGuard records silent video evidence during active emergencies.",
-        "NSMotionUsageDescription": "SafeGuard uses motion sensors to detect falls and struggle patterns."
+        "NSMotionUsageDescription": "SafeGuard uses motion sensors to detect falls and struggle patterns.",
+        "NSPhotoLibraryUsageDescription": "SafeGuard saves emergency video evidence to your photo library.",
+        "NSPhotoLibraryAddUsageDescription": "SafeGuard saves emergency video evidence to your photo library."
       }
     },
     "android": {
+      "package": "com.safeguard.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#0D0D0D"
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -32,7 +40,11 @@
         "CAMERA",
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED",
-        "ACTIVITY_RECOGNITION"
+        "ACTIVITY_RECOGNITION",
+        "READ_MEDIA_VIDEO",
+        "READ_MEDIA_IMAGES",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -47,7 +59,23 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-location"
+      "expo-location",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SafeGuard records video evidence during active emergencies.",
+          "microphonePermission": "SafeGuard records audio as part of emergency video evidence.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "SafeGuard saves emergency video evidence to your photo library.",
+          "savePhotosPermission": "SafeGuard saves emergency video evidence to your photo library.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

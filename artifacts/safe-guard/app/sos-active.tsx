@@ -191,10 +191,10 @@ export default function SOSActiveScreen() {
   const smsLabel = () => {
     if (smsStatus === "pending") return "Dispatching alerts...";
     if (smsStatus === "sent" && contactsNotified != null && contactsNotified > 0) {
-      return `${contactsNotified} SMS sent successfully`;
+      return `${contactsNotified} contact${contactsNotified > 1 ? "s" : ""} notified via SMS`;
     }
     return contacts.length > 0
-      ? "SMS alerts queued (Twilio not configured)"
+      ? "SMS failed — check contact phone numbers"
       : "No contacts to notify";
   };
 

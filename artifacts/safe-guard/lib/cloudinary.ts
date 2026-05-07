@@ -1,51 +1,46 @@
-const CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "dfficsnj4";
-const UPLOAD_PRESET = process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "ml_default";
+const CLOUD_NAME = "dfflcsnj4";
+const upload_preset = "sos_folder";
 
-export type CloudinaryUploadResult = {
-  secure_url: string;
-  public_id: string;
-  duration?: number;
-  format: string;
-};
+export async function uploadVideo(fileUri: string): Promise<string> {
+  return uploadMedia(fileUri, "video");
+}
 
-export async function uploadVideoToCloudinary(
+export async function uploadPhoto(fileUri: string): Promise<string> {
+  return uploadMedia(fileUri, "image");
+}
+
+async function uploadMedia(
   fileUri: string,
-  onProgress?: (progress: number) => void
-): Promise<CloudinaryUploadResult> {
-  const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`;
+  resourceType: "video" | "image"
+): Promise<string> {
 
   const formData = new FormData();
-  formData.append("upload_preset", UPLOAD_PRESET);
+
   formData.append("file", {
     uri: fileUri,
-    type: "video/mp4",
-    name: `safeguard_${Date.now()}.mp4`,
+    type: resourceType === "video"
+      ? "video/mp4"
+      : "image/jpeg",
+    name: `${Date.now()}.${resourceType === "video" ? "mp4" : "jpg"}`
   } as any);
 
-  const xhr = new XMLHttpRequest();
+  formData.append("upload_preset", upload_preset);
 
-  return new Promise((resolve, reject) => {
-    xhr.open("POST", url);
-
-    if (onProgress) {
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress(e.loaded / e.total);
-      };
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`,
+    {
+      method: "POST",
+      body: formData
     }
+  );
 
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText));
-        } catch {
-          reject(new Error("Invalid response from Cloudinary"));
-        }
-      } else {
-        reject(new Error(`Upload failed: ${xhr.status}`));
-      }
-    };
+  const data = await response.json();
 
-    xhr.onerror = () => reject(new Error("Network error during upload"));
-    xhr.send(formData);
-  });
+  console.log("Cloudinary Response:", data);
+
+  if (!data.secure_url) {
+    throw new Error(data.error?.message || "Upload failed");
+  }
+
+  return data.secure_url;
 }
