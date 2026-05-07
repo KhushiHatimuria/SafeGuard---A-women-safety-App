@@ -196,7 +196,7 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
     monitoring.endMinute,
   ]);
 
-  // Start/stop accelerometer based on monitoring state
+  // Start/stop accelerometer based on monitoring state (native only)
   useEffect(() => {
     if (isMonitoringActive && monitoring.motionDetection && Platform.OS !== "web") {
       startAccelerometer();
@@ -206,7 +206,48 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
     return () => stopAccelerometer();
   }, [isMonitoringActive, monitoring.motionDetection, monitoring.sensitivity]);
 
-  // Start/stop voice monitoring loop
+  // Web accelerometer via DeviceMotion API
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (!isMonitoringActive || !monitoring.motionDetection) return;
+
+    const handler = (event: DeviceMotionEvent) => {
+      const acc = event.accelerationIncludingGravity;
+      if (!acc) return;
+      const x = acc.x ?? 0;
+      const y = acc.y ?? 0;
+      const z = acc.z ?? 0;
+      const mag = Math.sqrt(x * x + y * y + z * z);
+      motionWindowRef.current.push(mag);
+      if (motionWindowRef.current.length > 10) motionWindowRef.current.shift();
+      if (motionWindowRef.current.length < 5) return;
+      const avg = motionWindowRef.current.reduce((a, b) => a + b, 0) / motionWindowRef.current.length;
+      const threshold = MOTION_THRESHOLD[monitoringRef.current.sensitivity] ?? 2.8;
+      if (avg > threshold && !motionCooldownRef.current) {
+        motionCooldownRef.current = true;
+        setMotionAlert(true);
+        if (monitoringRef.current.autoEscalate && sosStateRef.current === "idle") {
+          triggerSOS("motion");
+        }
+        setTimeout(() => { motionCooldownRef.current = false; }, 10000);
+      }
+    };
+
+    const requestAndListen = async () => {
+      if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
+        try {
+          const perm = await (DeviceMotionEvent as any).requestPermission();
+          if (perm !== "granted") return;
+        } catch { return; }
+      }
+      window.addEventListener("devicemotion", handler);
+    };
+
+    requestAndListen();
+    return () => window.removeEventListener("devicemotion", handler);
+  }, [isMonitoringActive, monitoring.motionDetection, monitoring.sensitivity]);
+
+  // Start/stop voice monitoring loop (native only)
   useEffect(() => {
     if (isMonitoringActive && monitoring.keywordSpotting && Platform.OS !== "web") {
       startVoiceMonitoringLoop();
@@ -214,6 +255,80 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
       stopVoiceMonitoringLoop();
     }
     return () => stopVoiceMonitoringLoop();
+  }, [isMonitoringActive, monitoring.keywordSpotting]);
+
+  // Web codeword + distress keyword detection via SpeechRecognition API
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (!isMonitoringActive || !monitoring.keywordSpotting) {
+      setVoiceListening(false);
+      return;
+    }
+
+    const SpeechRecognitionAPI =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) return;
+
+    const recognition = new SpeechRecognitionAPI();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    const WEB_DISTRESS_KEYWORDS = [
+      "help", "stop", "no", "police", "emergency", "danger", "fire", "911",
+      "save me", "let me go", "please stop", "somebody help",
+    ];
+
+    recognition.onstart = () => setVoiceListening(true);
+
+    recognition.onend = () => {
+      if (isMonitoringActiveRef.current && monitoringRef.current.keywordSpotting) {
+        try { recognition.start(); } catch {}
+      } else {
+        setVoiceListening(false);
+      }
+    };
+
+    recognition.onerror = () => {
+      setTimeout(() => {
+        if (isMonitoringActiveRef.current && monitoringRef.current.keywordSpotting) {
+          try { recognition.start(); } catch {}
+        }
+      }, 1000);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results as any[])
+        .map((r: any) => r[0].transcript)
+        .join(" ")
+        .toLowerCase()
+        .trim();
+      if (!transcript) return;
+
+      const codeword = monitoringRef.current.codeword?.toLowerCase().trim();
+      if (codeword && transcript.includes(codeword)) {
+        setLastDetection({ type: "codeword", keywords: [codeword], confidence: 0.99 });
+        if (monitoringRef.current.autoEscalate && sosStateRef.current === "idle") {
+          triggerSOS("keyword");
+        }
+        return;
+      }
+
+      const detected = WEB_DISTRESS_KEYWORDS.filter((kw) => transcript.includes(kw));
+      if (detected.length >= 2 && sosStateRef.current === "idle") {
+        setLastDetection({ type: "keyword", keywords: detected, confidence: 0.75 });
+        if (monitoringRef.current.autoEscalate) {
+          triggerSOS("auto");
+        }
+      }
+    };
+
+    try { recognition.start(); } catch {}
+
+    return () => {
+      try { recognition.stop(); } catch {}
+      setVoiceListening(false);
+    };
   }, [isMonitoringActive, monitoring.keywordSpotting]);
 
   const loadLocalData = async () => {
@@ -408,7 +523,8 @@ export function SafeGuardProvider({ children }: { children: React.ReactNode }) {
           confidence: result.confidence,
         });
         if (monitoringRef.current.vibrateOnDetect) Vibration.vibrate([0, 200, 100, 200]);
-        if (result.triggerSOS && monitoringRef.current.autoEscalate && sosStateRef.current === "idle") {
+        const shouldTrigger = result.triggerSOS || result.codewordDetected;
+        if (shouldTrigger && monitoringRef.current.autoEscalate && sosStateRef.current === "idle") {
           triggerSOS(result.codewordDetected ? "keyword" : "auto");
         }
       }

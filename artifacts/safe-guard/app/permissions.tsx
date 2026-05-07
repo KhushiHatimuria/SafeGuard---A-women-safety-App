@@ -4,6 +4,7 @@ import { useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { router } from "expo-router";
+import { Accelerometer } from "expo-sensors";
 import React, { useEffect, useState } from "react";
 import {
   Linking,
@@ -35,6 +36,7 @@ export default function PermissionsScreen() {
   const [locationStatus, setLocationStatus] = useState<PermissionStatus>("undetermined");
   const [micStatus, setMicStatus] = useState<PermissionStatus>("undetermined");
   const [notifStatus, setNotifStatus] = useState<PermissionStatus>("undetermined");
+  const [motionStatus, setMotionStatus] = useState<PermissionStatus>("undetermined");
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const cameraStatus: PermissionStatus = cameraPermission?.granted
@@ -47,13 +49,30 @@ export default function PermissionsScreen() {
     checkAll();
   }, []);
 
+  const checkMotionStatus = async (): Promise<PermissionStatus> => {
+    try {
+      if (Platform.OS === "web") {
+        if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
+          return "undetermined";
+        }
+        return "granted";
+      }
+      const { status } = await Accelerometer.getPermissionsAsync();
+      return status === "granted" ? "granted" : status === "denied" ? "denied" : "undetermined";
+    } catch {
+      return "undetermined";
+    }
+  };
+
   const checkAll = async () => {
-    const [loc, mic] = await Promise.all([
+    const [loc, mic, motion] = await Promise.all([
       Location.getForegroundPermissionsAsync(),
       Audio.getPermissionsAsync(),
+      checkMotionStatus(),
     ]);
     setLocationStatus(loc.granted ? "granted" : (loc.status as PermissionStatus));
     setMicStatus(mic.granted ? "granted" : (mic.status as PermissionStatus));
+    setMotionStatus(motion);
 
     // Check notification permission — available on iOS/Android via expo-notifications
     // gracefully skip on web or if not installed
@@ -116,7 +135,7 @@ export default function PermissionsScreen() {
         "Accelerometer data helps detect sudden falls or struggle patterns to trigger the verification phase.",
       icon: "activity",
       iconColor: COLORS.warning,
-      status: "undetermined",
+      status: motionStatus,
       required: false,
     },
   ];
@@ -147,6 +166,22 @@ export default function PermissionsScreen() {
         Linking.openSettings();
       } else {
         await requestCameraPermission();
+      }
+    } else if (id === "motion") {
+      try {
+        if (Platform.OS === "web") {
+          if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
+            const result = await (DeviceMotionEvent as any).requestPermission();
+            setMotionStatus(result === "granted" ? "granted" : "denied");
+          } else {
+            setMotionStatus("granted");
+          }
+        } else {
+          const { status } = await Accelerometer.requestPermissionsAsync();
+          setMotionStatus(status === "granted" ? "granted" : "denied");
+        }
+      } catch {
+        setMotionStatus("denied");
       }
     }
   };
