@@ -264,7 +264,7 @@ Every 8 seconds (when monitoring ON):
 | | |
 |--|--|
 | 🎯 **Theme** | Women Safety & Empowerment |
-| 👩‍💻 **Built by** | [@KhushiHatimuria](https://github.com/KhushiHatimuria) |
+| 👩‍💻 **Built by** | (https://github.com/KhushiHatimuria) |
 | ⚡ **AI Model** | Google Gemini 2.5 Flash |
 | 🌍 **Impact** | Multi-signal, low-false-positive safety for real-world scenarios |
 | 🌐 **Languages supported** | English, Hindi, Spanish, French, German (distress keywords) |
