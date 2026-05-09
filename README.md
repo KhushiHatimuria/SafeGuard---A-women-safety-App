@@ -1,6 +1,7 @@
 <div align="center">
 
-<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=14&pause=1000&color=C8394A&center=true&vCenter=true&width=500&lines=🛡️+Because+every+woman+deserves+to+feel+safe.;AI-powered+distress+detection.;One+tap+away+from+help." alt="Typing SVG" />
+<h3>🛡️ Because every woman deserves to feel safe.</h3>
+<h4><i>AI-powered distress detection &nbsp;·&nbsp; One tap away from help.</i></h4>
 
 # 🛡️ SafeGuard
 ### *Women's Safety SOS Mobile App*
