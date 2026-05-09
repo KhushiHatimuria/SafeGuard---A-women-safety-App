@@ -22,7 +22,7 @@
 
 <br/>
 
-### 🌐 [**Try the Live App →**](https://newapp--1ep23cs077khush.replit.app)
+### 🌐 [**Try the Live App →**](https://safe-guard--1ep23cs077khush.replit.app)
 
 ---
 
