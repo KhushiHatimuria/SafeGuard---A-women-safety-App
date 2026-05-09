@@ -251,7 +251,7 @@ SOS Active Screen
 | 👩‍💻 **Team** | Team Trivera |
 | 👥 **Members** | [Khushi Hatimuria](https://github.com/KhushiHatimuria) · [Nisha Sinha](https://github.com/Nishasinha12) · [Pooja Kumari](https://github.com/kumaripoojasah) |
 | 🎯 **Theme** | Women Safety & Empowerment |
-| 🌐 **Live App** | [https://newapp--1ep23cs077khush.replit.app](https://safe-guard--1ep23cs077khush.replit.app) |
+| 🌐 **Live App** | [https://safe-guard--1ep23cs077khush.replit.app](https://safe-guard--1ep23cs077khush.replit.app) |
 | 🌍 **Languages** | English · Hindi · Spanish · French · German |
 | 💡 **Mission** | Multi-signal, low-false-positive safety for real-world scenarios |
 
