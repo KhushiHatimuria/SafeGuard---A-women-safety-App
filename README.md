@@ -201,7 +201,7 @@ pnpm --filter @workspace/api-server run dev
 pnpm --filter @workspace/safe-guard run dev
 ```
 
-> ✅ **Or just use the live deployed version:** [https://newapp--1ep23cs077khush.replit.app](https://newapp--1ep23cs077khush.replit.app)
+> ✅ **Or just use the live deployed version:** [https://safe-guard--1ep23cs077khush.replit.app](https://safe-guard--1ep23cs077khush.replit.app)
 > Download the Expo-Go App to view the App
 
 ---
