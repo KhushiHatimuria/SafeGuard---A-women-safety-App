@@ -247,6 +247,7 @@ SOS Active Screen
 | | |
 |--|--|
 | 👩‍💻 **Team** | Team Trivera |
+| 👥 **Members** | [Khushi Hatimuria](https://github.com/KhushiHatimuria) · [Nisha Sinha](https://github.com/Nishasinha12) · [Pooja Kumari](https://github.com/kumaripoojasah) |
 | 🎯 **Theme** | Women Safety & Empowerment |
 | 🌐 **Live App** | [https://newapp--1ep23cs077khush.replit.app](https://newapp--1ep23cs077khush.replit.app) |
 | 🌍 **Languages** | English · Hindi · Spanish · French · German |
